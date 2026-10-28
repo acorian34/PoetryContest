@@ -1,0 +1,73 @@
+-- Migration for an EXISTING database (MySQL 8) created from the original schema.sql.
+-- Back up first. Run the whole file once. Fresh installs use schema.sql instead.
+
+-- 1. Roles: every existing account becomes a contestant.
+ALTER TABLE people
+  ADD COLUMN role ENUM('contestant','judge','admin') NOT NULL DEFAULT 'contestant' AFTER category,
+  ADD KEY idx_people_role (role);
+
+-- 2. Contests, judge assignments and scores.
+CREATE TABLE contests (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name         VARCHAR(150) NOT NULL,
+  description  TEXT         NULL,
+  rules        TEXT         NULL,
+  start_date   DATE         NOT NULL,
+  end_date     DATE         NOT NULL,
+  max_entries  TINYINT UNSIGNED NOT NULL DEFAULT 2,
+  is_open      TINYINT(1)   NOT NULL DEFAULT 1,
+  created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_contests_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE judge_assignments (
+  person_id   INT UNSIGNED NOT NULL,
+  contest_id  INT UNSIGNED NOT NULL,
+  assigned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (person_id, contest_id),
+  KEY idx_assign_contest (contest_id),
+  CONSTRAINT fk_assign_person  FOREIGN KEY (person_id)  REFERENCES people (id)   ON DELETE CASCADE,
+  CONSTRAINT fk_assign_contest FOREIGN KEY (contest_id) REFERENCES contests (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 3. One contest per year that already has entries, named "Poetry Contest <year>", closed to new entries, with dates
+--    covering that calendar year and no rules text yet. Edit them on the Contests page (add the rules, dates, open switch).
+--    (Rename or open them afterwards on the Contests page.)
+INSERT INTO contests (name, start_date, end_date, max_entries, is_open)
+  SELECT CONCAT('Poetry Contest ', contest_year), MAKEDATE(contest_year, 1), MAKEDATE(contest_year + 1, 1) - INTERVAL 1 DAY, 2, 0
+  FROM (SELECT DISTINCT contest_year FROM entries) y
+  ORDER BY contest_year;
+
+-- Optional: keep the current year open for entries (use your CONTEST_YEAR). Skipped if you set this via the admin page later.
+-- UPDATE contests SET is_open = 1 WHERE name = 'Poetry Contest 2026';
+
+-- 4. Point entries at their contest instead of a year.
+ALTER TABLE entries ADD COLUMN rules_agreed_at TIMESTAMP NULL;   -- NULL for entries made before rules agreement existed
+ALTER TABLE entries ADD COLUMN contest_id INT UNSIGNED NULL AFTER person_id;
+UPDATE entries e JOIN contests c ON c.name = CONCAT('Poetry Contest ', e.contest_year) SET e.contest_id = c.id;
+ALTER TABLE entries
+  MODIFY contest_id INT UNSIGNED NOT NULL,
+  ADD UNIQUE KEY uq_entries_contest_code (contest_id, code),
+  ADD KEY idx_entries_person_contest (person_id, contest_id),
+  ADD CONSTRAINT fk_entries_contest FOREIGN KEY (contest_id) REFERENCES contests (id) ON DELETE RESTRICT;
+ALTER TABLE entries
+  DROP INDEX uq_entries_year_code,
+  DROP INDEX idx_entries_person_year,
+  DROP COLUMN contest_year;
+
+CREATE TABLE scores (
+  entry_id   INT UNSIGNED NOT NULL,
+  judge_id   INT UNSIGNED NOT NULL,
+  score      TINYINT UNSIGNED NOT NULL,
+  comments   VARCHAR(2000) NOT NULL DEFAULT '',
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (entry_id, judge_id),
+  KEY idx_scores_judge (judge_id),
+  CONSTRAINT fk_scores_entry FOREIGN KEY (entry_id) REFERENCES entries (id) ON DELETE CASCADE,
+  CONSTRAINT fk_scores_judge FOREIGN KEY (judge_id) REFERENCES people (id)  ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 5. The old global "submissions on/off" setting is replaced by a per-contest open switch. Safe to drop.
+DROP TABLE IF EXISTS settings;
+
+-- Then log in at admin.php with ADMIN_PASSWORD: open the Contests page to adjust contests, and add judges on the Judges page.

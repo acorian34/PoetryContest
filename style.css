@@ -32,3 +32,9 @@ th { background: #eef1f4; }
 td form { padding: 0; border: 0; background: none; max-width: none; }
 .yearform { padding: 0; border: 0; background: none; max-width: 200px; margin-bottom: 12px; }
 @media (max-width: 560px) { .row { flex-direction: column; gap: 0; } }
+textarea { display: block; width: 100%; margin-top: 4px; padding: 9px; font: inherit; border: 1px solid #bbb; border-radius: 4px; }
+td form.scoreform { display: flex; gap: 6px; align-items: center; }
+td form.scoreform input { margin-top: 0; }
+label.check { display: flex; gap: 8px; align-items: flex-start; font-weight: normal; }
+label.check input { width: auto; margin-top: 4px; }
+.rules { background: #f4f1ea; border: 1px solid #ddd; border-radius: 4px; padding: 8px 12px; margin: 6px 0; max-width: 640px; font-size: .9rem; }

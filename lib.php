@@ -16,38 +16,46 @@ function db(): PDO {
     return $pdo;
 }
 
-/** Whether new registrations and submissions are accepted. The admin page toggle is stored in the `settings` table;
- *  until it has been used (or if the table is missing) the ENTRIES_OPEN constant in config.php applies. */
-function entries_open(): bool {
-    static $open = null;
-    if ($open === null) {
-        $open = ENTRIES_OPEN;
-        try {
-            $v = db()->query("SELECT setting_value FROM settings WHERE setting_key = 'entries_open'")->fetchColumn();
-            if ($v !== false) $open = $v === '1';
-        } catch (Throwable $e) { /* settings table not created yet: keep the config default */ }
+/** SQL condition for "accepting entries now": the admin open switch is on and today is within the start and end dates (inclusive). */
+const CONTEST_ACCEPTING = '(is_open = 1 AND CURDATE() BETWEEN start_date AND end_date)';
+
+/** All contests, newest first, or only the ones accepting entries. */
+function all_contests(bool $openOnly = false): array {
+    $sql = 'SELECT *, ' . CONTEST_ACCEPTING . ' AS accepting FROM contests' . ($openOnly ? ' WHERE ' . CONTEST_ACCEPTING : '') . ' ORDER BY id DESC';
+    return db()->query($sql)->fetchAll();
+}
+
+function find_contest(int $id): ?array {
+    $st = db()->prepare('SELECT *, ' . CONTEST_ACCEPTING . ' AS accepting FROM contests WHERE id = ?');
+    $st->execute([$id]);
+    return $st->fetch() ?: null;
+}
+
+/** The contest chosen with ?contest=ID, limited to the given list (so a judge cannot pick one they are not assigned to).
+ *  Falls back to the first contest in the list, or null when the list is empty. */
+function selected_contest(array $list): ?array {
+    $id = (int)($_GET['contest'] ?? 0);
+    foreach ($list as $c) if ((int)$c['id'] === $id) return $c;
+    return $list[0] ?? null;
+}
+
+/** Small dropdown to switch between contests. */
+function contest_picker(array $list, ?int $selectedId): string {
+    $html = '<form method="get" class="yearform"><label>Contest <select name="contest" onchange="this.form.submit()">';
+    foreach ($list as $c) {
+        $html .= '<option value="' . (int)$c['id'] . '"' . ((int)$c['id'] === $selectedId ? ' selected' : '') . '>' . h($c['name']) . '</option>';
     }
-    return $open;
+    return $html . '</select></label></form>';
 }
-
-function set_entries_open(bool $open): void {
-    db()->exec('CREATE TABLE IF NOT EXISTS settings (
-        setting_key   VARCHAR(40)  NOT NULL PRIMARY KEY,
-        setting_value VARCHAR(255) NOT NULL
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');
-    db()->prepare("REPLACE INTO settings (setting_key, setting_value) VALUES ('entries_open', ?)")
-        ->execute([$open ? '1' : '0']);
-}
-
 function h(?string $s): string { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
-/** The logged-in entrant (a row from `people`), or null. */
+/** The logged-in entrant (a row from `people` with role contestant), or null. */
 function current_user(): ?array {
     static $user = false;
     if ($user === false) {
         $user = null;
         if (!empty($_SESSION['user_id'])) {
-            $st = db()->prepare('SELECT * FROM people WHERE id = ?');
+            $st = db()->prepare("SELECT * FROM people WHERE id = ? AND role = 'contestant'");
             $st->execute([(int)$_SESSION['user_id']]);
             $user = $st->fetch() ?: null;
         }
@@ -84,25 +92,6 @@ function check_upload(string $tmpPath, string $ext): ?string {
     return $msg;
 }
 
-/** Contest year chosen on the admin/judge pages (?year=2026); defaults to the current contest year. */
-function selected_year(): int {
-    $y = (int)($_GET['year'] ?? 0);
-    return ($y >= 2000 && $y <= 2200) ? $y : CONTEST_YEAR;
-}
-
-/** Small dropdown to switch between contest years that have entries. */
-function year_picker(int $selected): string {
-    $years = db()->query('SELECT DISTINCT contest_year FROM entries')->fetchAll(PDO::FETCH_COLUMN);
-    $years[] = CONTEST_YEAR;
-    $years[] = $selected;
-    $years = array_unique(array_map('intval', $years));
-    rsort($years);
-    $html = '<form method="get" class="yearform"><label>Contest year <select name="year" onchange="this.form.submit()">';
-    foreach ($years as $y) {
-        $html .= '<option value="' . $y . '"' . ($y === $selected ? ' selected' : '') . '>' . $y . '</option>';
-    }
-    return $html . '</select></label></form>';
-}
 
 /** Send the visitor to the login page unless an entrant is logged in. */
 function require_user(): array {
@@ -124,23 +113,67 @@ function csrf_check(): void {
 }
 
 /** Random, unique judging code like HS-482. Numbers are random, so they reveal nothing about entry order. */
-function make_code(PDO $pdo, string $category, int $year): string {
+function make_code(PDO $pdo, string $category, int $contestId): string {
     $prefix = CATEGORIES[$category][1];
-    $exists = $pdo->prepare('SELECT 1 FROM entries WHERE contest_year = ? AND code = ?');
+    $exists = $pdo->prepare('SELECT 1 FROM entries WHERE contest_id = ? AND code = ?');
     for ($digits = 3; $digits <= 6; $digits++) {
         $min = (int)pow(10, $digits - 1);
         $max = (int)pow(10, $digits) - 1;
         for ($i = 0; $i < 50; $i++) {
             $code = $prefix . '-' . random_int($min, $max);
-            $exists->execute([$year, $code]);
+            $exists->execute([$contestId, $code]);
             if (!$exists->fetch()) return $code;
         }
     }
     throw new RuntimeException('Could not generate a unique code.');
 }
 
-/** Send the visitor to the login page unless logged in with the needed role (admin can see judge pages too). */
+/** The logged-in judge or database admin (a row from `people` whose role is judge or admin), or null.
+ *  Checked against the database on every request, so demoting a judge takes effect immediately. */
+function current_judge(): ?array {
+    static $judge = false;
+    if ($judge === false) {
+        $judge = null;
+        if (!empty($_SESSION['judge_id'])) {
+            $st = db()->prepare("SELECT * FROM people WHERE id = ? AND role IN ('judge','admin')");
+            $st->execute([(int)$_SESSION['judge_id']]);
+            $judge = $st->fetch() ?: null;
+        }
+    }
+    return $judge;
+}
+
+/** Contests the logged-in judge is assigned to (newest first), or null when not restricted (shared-password admin). */
+function judge_contests(): ?array {
+    if (empty($_SESSION['judge_id'])) return ($_SESSION['role'] ?? '') === 'admin' ? null : [];
+    $j = current_judge();
+    if (!$j) return [];
+    if ($j['role'] === 'admin') return null;
+    $st = db()->prepare('SELECT c.* FROM contests c JOIN judge_assignments a ON a.contest_id = c.id
+                         WHERE a.person_id = ? ORDER BY c.id DESC');
+    $st->execute([$j['id']]);
+    return $st->fetchAll();
+}
+
+/** Whether the logged-in judge may view and score entries of this contest. */
+function judge_can_access(int $contestId): bool {
+    $list = judge_contests();
+    if ($list === null) return true;
+    foreach ($list as $c) if ((int)$c['id'] === $contestId) return true;
+    return false;
+}
+
+/** Send the visitor to the login page unless logged in with the needed role (admin can see judge pages too).
+ *  The shared ADMIN_PASSWORD login has role 'admin' and no judge_id; judges and database admins sign in with their own account. */
 function require_role(string $role): void {
+    if (!empty($_SESSION['judge_id'])) {
+        $j = current_judge();
+        if ($j) {
+            $_SESSION['role'] = $j['role'];
+        } else {
+            unset($_SESSION['role'], $_SESSION['judge_id']); // account removed or demoted
+        }
+    }
     $have = $_SESSION['role'] ?? '';
     if ($have !== $role && $have !== 'admin') {
         header('Location: login.php?as=' . $role);

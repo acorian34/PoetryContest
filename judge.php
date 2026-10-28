@@ -1,19 +1,75 @@
 <?php
 require __DIR__ . '/lib.php';
 require_role('judge');
+$pdo = db();
 
-$year = selected_year();
-$st = db()->prepare('SELECT id, code, category, title FROM entries WHERE contest_year = ? ORDER BY category, code');
-$st->execute([$year]);
-$rows = $st->fetchAll();
+$me = current_judge();                          // null for the shared-password admin, who can look but not score
+$contests = judge_contests() ?? all_contests(); // judges only get the contests they are assigned to
+$contest = selected_contest($contests);
+$cid = $contest ? (int)$contest['id'] : 0;
+
+$errors = [];
+$notice = $_SESSION['flash_score'] ?? null;
+unset($_SESSION['flash_score']);
+
+// Save a score
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
+    $entryId = (int)($_POST['entry_id'] ?? 0);
+    $score = filter_var($_POST['score'] ?? '', FILTER_VALIDATE_INT);
+    $comments = trim((string)($_POST['comments'] ?? ''));
+
+    $st = $pdo->prepare('SELECT contest_id, code FROM entries WHERE id = ?');
+    $st->execute([$entryId]);
+    $entry = $st->fetch();
+
+    if (!$me) {
+        $errors[] = 'Only judge accounts can record scores.';
+    } elseif (!$entry || !judge_can_access((int)$entry['contest_id'])) {
+        $errors[] = 'You are not a judge for that entry\'s contest.';
+    } elseif ($score === false || $score < 1 || $score > SCORE_MAX) {
+        $errors[] = 'Score must be a whole number from 1 to ' . SCORE_MAX . '.';
+    } elseif (mb_strlen($comments) > 2000) {
+        $errors[] = 'Comments must be 2000 characters or fewer.';
+    } else {
+        $pdo->prepare('INSERT INTO scores (entry_id, judge_id, score, comments) VALUES (?,?,?,?)
+                       ON DUPLICATE KEY UPDATE score = VALUES(score), comments = VALUES(comments)')
+            ->execute([$entryId, $me['id'], $score, $comments]);
+        $_SESSION['flash_score'] = 'Saved score for ' . $entry['code'] . '.';
+        header('Location: judge.php?contest=' . (int)$entry['contest_id'] . '#e' . $entryId);
+        exit;
+    }
+}
+
 $byCat = [];
-foreach ($rows as $r) $byCat[$r['category']][] = $r;
+$mine = [];
+if ($contest) {
+    $st = $pdo->prepare('SELECT id, code, category, title FROM entries WHERE contest_id = ? ORDER BY category, code');
+    $st->execute([$cid]);
+    foreach ($st->fetchAll() as $r) $byCat[$r['category']][] = $r;
+    if ($me) {
+        $st = $pdo->prepare('SELECT s.entry_id, s.score, s.comments FROM scores s JOIN entries e ON e.id = s.entry_id
+                             WHERE s.judge_id = ? AND e.contest_id = ?');
+        $st->execute([$me['id'], $cid]);
+        foreach ($st->fetchAll() as $s) $mine[$s['entry_id']] = $s;
+    }
+}
+$total = array_sum(array_map('count', $byCat));
 
-page_header('Judging', '<nav><a href="login.php?logout=1">Log out</a></nav>');
+page_header('Judging', '<nav>' . ($me ? h($me['first_name'] . ' ' . $me['last_name']) . ' ' : '') . '<a href="login.php?logout=1">Log out</a></nav>');
 ?>
-<h1><?= $year ?> entries for judging</h1>
-<?= year_picker($year) ?>
-<p class="note">Entries are identified only by code. Use the code when recording scores.</p>
+<?php if (!$contest): ?>
+  <h1>Judging</h1>
+  <div class="box err"><?= $me ? 'You have not been assigned to a contest yet. Please contact the contest administrator.' : 'There are no contests yet.' ?></div>
+<?php else: ?>
+<h1><?= h($contest['name']) ?>: entries for judging</h1>
+<?= contest_picker($contests, $cid) ?>
+<?php if ($notice): ?><div class="box ok"><?= h($notice) ?></div><?php endif; ?>
+<?php if ($errors): ?>
+  <div class="box err"><ul><?php foreach ($errors as $e) echo '<li>' . h($e) . '</li>'; ?></ul></div>
+<?php endif; ?>
+<p class="note">Entries are identified only by code. Score each poem from 1 to <?= SCORE_MAX ?> (<?= SCORE_MAX ?> is best); you can change a score later.
+<?php if ($me): ?>You have scored <strong><?= count($mine) ?></strong> of <?= $total ?>.<?php endif; ?></p>
 <?php foreach (CATEGORIES as $key => [$label]): ?>
   <h2><?= h($label) ?> (<?= count($byCat[$key] ?? []) ?>)</h2>
   <?php if (empty($byCat[$key])): ?>
@@ -21,16 +77,28 @@ page_header('Judging', '<nav><a href="login.php?logout=1">Log out</a></nav>');
   <?php else: ?>
   <div class="tablewrap">
   <table>
-    <tr><th>Code</th><th>Title</th><th>Poem</th></tr>
-    <?php foreach ($byCat[$key] as $r): ?>
-    <tr>
+    <tr><th>Code</th><th>Title</th><th>Poem</th><th>Your score</th></tr>
+    <?php foreach ($byCat[$key] as $r): $s = $mine[$r['id']] ?? null; ?>
+    <tr id="e<?= (int)$r['id'] ?>">
       <td><strong><?= h($r['code']) ?></strong></td>
       <td><?= h($r['title']) ?></td>
       <td><a href="download.php?id=<?= (int)$r['id'] ?>">Download</a></td>
+      <td>
+      <?php if ($me): ?>
+        <form method="post" class="scoreform">
+          <?= csrf_field() ?>
+          <input type="hidden" name="entry_id" value="<?= (int)$r['id'] ?>">
+          <input type="number" name="score" min="1" max="<?= SCORE_MAX ?>" required style="width:5em" value="<?= $s ? (int)$s['score'] : '' ?>">
+          <input name="comments" maxlength="2000" placeholder="Comments (optional)" value="<?= h($s['comments'] ?? '') ?>">
+          <button type="submit"><?= $s ? 'Update' : 'Save' ?></button>
+        </form>
+      <?php else: ?>-<?php endif; ?>
+      </td>
     </tr>
     <?php endforeach; ?>
   </table>
   </div>
   <?php endif; ?>
 <?php endforeach; ?>
+<?php endif; ?>
 <?php page_footer();
