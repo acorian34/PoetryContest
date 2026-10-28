@@ -89,7 +89,7 @@ $rows = $pdo->query('SELECT c.*, ' . CONTEST_ACCEPTING . ' AS accepting,
         (SELECT COUNT(*) FROM judge_assignments a WHERE a.contest_id = c.id) AS judge_count
     FROM contests c ORDER BY c.id DESC')->fetchAll();
 
-page_header('Contests', '<nav><a href="admin.php">Entries</a> <a href="judges.php">Judges</a> <a href="login.php?logout=1">Log out</a></nav>');
+page_header('Contests', admin_nav());
 ?>
 <h1>Contests (<?= count($rows) ?>)</h1>
 <p class="note">Several contests can run at once. A contest accepts entries only between its start and end dates and while its open switch is on. Entrants choose which open contests to enter; the entries-per-person limit applies to each contest separately.</p>

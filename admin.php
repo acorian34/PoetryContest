@@ -27,7 +27,7 @@ if ($contest) {
                                 p.first_name, p.last_name, p.email, p.phone,
                                 (SELECT AVG(s.score) FROM scores s WHERE s.entry_id = e.id) AS avg_score,
                                 (SELECT COUNT(*) FROM scores s WHERE s.entry_id = e.id) AS score_count
-                         FROM entries e JOIN people p ON p.id = e.person_id
+                         FROM entries e JOIN users p ON p.id = e.person_id
                          WHERE e.contest_id = ?
                          ORDER BY e.category, e.code');
     $st->execute([$cid]);
@@ -36,41 +36,23 @@ if ($contest) {
     // Individual judge scores, grouped by entry
     $byEntry = [];
     $st = $pdo->prepare('SELECT s.entry_id, s.score, s.comments, p.first_name, p.last_name
-                         FROM scores s JOIN entries e ON e.id = s.entry_id JOIN people p ON p.id = s.judge_id
+                         FROM scores s JOIN entries e ON e.id = s.entry_id JOIN users p ON p.id = s.judge_id
                          WHERE e.contest_id = ? ORDER BY p.last_name, p.first_name');
     $st->execute([$cid]);
     foreach ($st->fetchAll() as $s) $byEntry[$s['entry_id']][] = $s;
 }
 
-// CSV export (for the selected contest)
-if ($contest && isset($_GET['csv'])) {
-    $safe = fn($s) => preg_match('/^[=+\-@\t\r]/', (string)$s) ? "'" . $s : $s; // block spreadsheet formula injection
-    header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename="poetry-entries-contest-' . $cid . '.csv"');
-    $out = fopen('php://output', 'w');
-    fwrite($out, "\xEF\xBB\xBF"); // UTF-8 BOM so Excel reads accents correctly
-    fputcsv($out, ['Contest', 'Code', 'Category', 'Title', 'First name', 'Last name', 'Email', 'Phone', 'Submitted', 'Average score', 'Scores given'], ',', '"', '');
-    foreach ($rows as $r) {
-        fputcsv($out, [$safe($contest['name']), $r['code'], CATEGORIES[$r['category']][0], $safe($r['title']), $safe($r['first_name']),
-                       $safe($r['last_name']), $r['email'], $safe($r['phone']), $r['created_at'],
-                       $r['avg_score'] === null ? '' : round((float)$r['avg_score'], 2), $r['score_count']], ',', '"', '');
-    }
-    exit;
-}
-
 $counts = [];
 foreach ($rows as $r) $counts[$r['category']] = ($counts[$r['category']] ?? 0) + 1;
 
-$q = $contest ? '?contest=' . $cid : '';
-page_header('Admin', '<nav><a href="contests.php">Contests</a> <a href="judges.php">Judges</a>'
-    . ($contest ? ' <a href="judge.php' . $q . '">Judge view</a> <a href="admin.php?csv=1&amp;contest=' . $cid . '">Download CSV</a>' : '')
-    . ' <a href="login.php?logout=1">Log out</a></nav>');
+page_header('Admin', admin_nav());
 ?>
 <?php if (!$contest): ?>
   <h1>Entries</h1>
   <p class="note">No contests yet. <a href="contests.php">Create the first contest</a>.</p>
 <?php else: ?>
 <h1><?= h($contest['name']) ?> (<?= count($rows) ?> entries)</h1>
+<p><a href="judge.php?contest=<?= $cid ?>">Judge view</a> &middot; <a href="report.php?contest=<?= $cid ?>">Report and scores</a></p>
 <p class="note">Submissions are <strong><?= $contest['accepting'] ? 'open' : 'closed' ?></strong> (<?= h($contest['start_date']) ?> to <?= h($contest['end_date']) ?>) &middot; <?= (int)$contest['max_entries'] ?> per person &middot; <a href="contests.php">manage contests</a></p>
 <?= contest_picker($contests, $cid) ?>
 <p class="note">

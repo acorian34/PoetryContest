@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$errors) {
         try {
             $pdo = db();
-            $pdo->prepare('INSERT INTO people (username, password_hash, first_name, last_name, email, phone, category)
+            $pdo->prepare('INSERT INTO users (username, password_hash, first_name, last_name, email, phone, category)
                            VALUES (?,?,?,?,?,?,?)')
                 ->execute([$v['username'], password_hash($password, PASSWORD_DEFAULT), $v['first_name'],
                            $v['last_name'], $v['email'], $v['phone'], $v['category']]);

@@ -3,7 +3,8 @@ require __DIR__ . '/lib.php';
 require_role('judge');
 $pdo = db();
 
-$me = current_judge();                          // null for the shared-password admin, who can look but not score
+$me = current_judge();                          // judge or admin account
+$canScore = $me && $me['role'] === 'judge';       // admins can look at every contest but only assigned judges score
 $contests = judge_contests() ?? all_contests(); // judges only get the contests they are assigned to
 $contest = selected_contest($contests);
 $cid = $contest ? (int)$contest['id'] : 0;
@@ -23,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $st->execute([$entryId]);
     $entry = $st->fetch();
 
-    if (!$me) {
+    if (!$canScore) {
         $errors[] = 'Only judge accounts can record scores.';
     } elseif (!$entry || !judge_can_access((int)$entry['contest_id'])) {
         $errors[] = 'You are not a judge for that entry\'s contest.';
@@ -47,7 +48,7 @@ if ($contest) {
     $st = $pdo->prepare('SELECT id, code, category, title FROM entries WHERE contest_id = ? ORDER BY category, code');
     $st->execute([$cid]);
     foreach ($st->fetchAll() as $r) $byCat[$r['category']][] = $r;
-    if ($me) {
+    if ($canScore) {
         $st = $pdo->prepare('SELECT s.entry_id, s.score, s.comments FROM scores s JOIN entries e ON e.id = s.entry_id
                              WHERE s.judge_id = ? AND e.contest_id = ?');
         $st->execute([$me['id'], $cid]);
@@ -60,7 +61,7 @@ page_header('Judging', '<nav>' . ($me ? h($me['first_name'] . ' ' . $me['last_na
 ?>
 <?php if (!$contest): ?>
   <h1>Judging</h1>
-  <div class="box err"><?= $me ? 'You have not been assigned to a contest yet. Please contact the contest administrator.' : 'There are no contests yet.' ?></div>
+  <div class="box err"><?= $canScore ? 'You have not been assigned to a contest yet. Please contact the contest administrator.' : 'There are no contests yet.' ?></div>
 <?php else: ?>
 <h1><?= h($contest['name']) ?>: entries for judging</h1>
 <?= contest_picker($contests, $cid) ?>
@@ -69,7 +70,7 @@ page_header('Judging', '<nav>' . ($me ? h($me['first_name'] . ' ' . $me['last_na
   <div class="box err"><ul><?php foreach ($errors as $e) echo '<li>' . h($e) . '</li>'; ?></ul></div>
 <?php endif; ?>
 <p class="note">Entries are identified only by code. Score each poem from 1 to <?= SCORE_MAX ?> (<?= SCORE_MAX ?> is best); you can change a score later.
-<?php if ($me): ?>You have scored <strong><?= count($mine) ?></strong> of <?= $total ?>.<?php endif; ?></p>
+<?php if ($canScore): ?>You have scored <strong><?= count($mine) ?></strong> of <?= $total ?>.<?php endif; ?></p>
 <?php foreach (CATEGORIES as $key => [$label]): ?>
   <h2><?= h($label) ?> (<?= count($byCat[$key] ?? []) ?>)</h2>
   <?php if (empty($byCat[$key])): ?>
@@ -84,7 +85,7 @@ page_header('Judging', '<nav>' . ($me ? h($me['first_name'] . ' ' . $me['last_na
       <td><?= h($r['title']) ?></td>
       <td><a href="download.php?id=<?= (int)$r['id'] ?>">Download</a></td>
       <td>
-      <?php if ($me): ?>
+      <?php if ($canScore): ?>
         <form method="post" class="scoreform">
           <?= csrf_field() ?>
           <input type="hidden" name="entry_id" value="<?= (int)$r['id'] ?>">

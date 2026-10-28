@@ -1,6 +1,6 @@
 -- Fresh install (MySQL 8). Existing databases: run migrate.sql instead.
 
-CREATE TABLE people (
+CREATE TABLE users (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   username      VARCHAR(40)  NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
@@ -11,9 +11,9 @@ CREATE TABLE people (
   category      VARCHAR(10)  NOT NULL,   -- default category, updated each time they submit (empty for judges)
   role          ENUM('contestant','judge','admin') NOT NULL DEFAULT 'contestant',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_people_username (username),
-  UNIQUE KEY uq_people_email (email),
-  KEY idx_people_role (role)
+  UNIQUE KEY uq_users_username (username),
+  UNIQUE KEY uq_users_email (email),
+  KEY idx_users_role (role)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Contests are created by the admin (contests.php). Several can be open at the same time.
@@ -45,7 +45,7 @@ CREATE TABLE entries (
   UNIQUE KEY uq_entries_contest_code (contest_id, code),
   KEY idx_entries_person_contest (person_id, contest_id),
   CONSTRAINT fk_entries_person FOREIGN KEY (person_id)
-    REFERENCES people (id) ON DELETE CASCADE,
+    REFERENCES users (id) ON DELETE CASCADE,
   CONSTRAINT fk_entries_contest FOREIGN KEY (contest_id)
     REFERENCES contests (id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -57,7 +57,7 @@ CREATE TABLE judge_assignments (
   assigned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (person_id, contest_id),
   KEY idx_assign_contest (contest_id),
-  CONSTRAINT fk_assign_person  FOREIGN KEY (person_id)  REFERENCES people (id)   ON DELETE CASCADE,
+  CONSTRAINT fk_assign_person  FOREIGN KEY (person_id)  REFERENCES users (id)   ON DELETE CASCADE,
   CONSTRAINT fk_assign_contest FOREIGN KEY (contest_id) REFERENCES contests (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -71,5 +71,5 @@ CREATE TABLE scores (
   PRIMARY KEY (entry_id, judge_id),
   KEY idx_scores_judge (judge_id),
   CONSTRAINT fk_scores_entry FOREIGN KEY (entry_id) REFERENCES entries (id) ON DELETE CASCADE,
-  CONSTRAINT fk_scores_judge FOREIGN KEY (judge_id) REFERENCES people (id)  ON DELETE CASCADE
+  CONSTRAINT fk_scores_judge FOREIGN KEY (judge_id) REFERENCES users (id)  ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

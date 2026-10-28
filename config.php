@@ -1,8 +1,8 @@
 <?php
 // ---- EDIT THESE BEFORE GOING LIVE ----
 const CONTEST_NAME    = 'Annual Poetry Contest';   // site title; the individual contests are created on the admin Contests page
-const ADMIN_PASSWORD  = 'change-me-admin';   // sees everything (names, contact info, CSV export) and manages judges
-// Judges have no password here: the admin creates them on the Judges page (judges.php), each with their own login.
+const SETUP_KEY       = 'change-me-setup';   // only used once, on setup.php, to create the first administrator account
+// Judges and administrators are database users with their own logins: create the first admin on setup.php, then add judges and admins in the app.
 const DEFAULT_MAX_ENTRIES = 2;                // pre-filled when creating a contest; each contest has its own limit
 const SCORE_MAX       = 10;                  // judges score each entry from 1 to this number
 const MAX_FILE_BYTES  = 5 * 1024 * 1024;     // 5 MB

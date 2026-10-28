@@ -1,10 +1,12 @@
 -- Migration for an EXISTING database (MySQL 8) created from the original schema.sql.
 -- Back up first. Run the whole file once. Fresh installs use schema.sql instead.
+-- If you already ran an earlier version of this file (it named the table "people"), run only:  RENAME TABLE people TO users;
 
--- 1. Roles: every existing account becomes a contestant.
-ALTER TABLE people
+-- 1. Everyone (entrants, judges, admins) lives in the `users` table; add roles. Every existing account becomes a contestant.
+RENAME TABLE people TO users;
+ALTER TABLE users
   ADD COLUMN role ENUM('contestant','judge','admin') NOT NULL DEFAULT 'contestant' AFTER category,
-  ADD KEY idx_people_role (role);
+  ADD KEY idx_users_role (role);
 
 -- 2. Contests, judge assignments and scores.
 CREATE TABLE contests (
@@ -26,7 +28,7 @@ CREATE TABLE judge_assignments (
   assigned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (person_id, contest_id),
   KEY idx_assign_contest (contest_id),
-  CONSTRAINT fk_assign_person  FOREIGN KEY (person_id)  REFERENCES people (id)   ON DELETE CASCADE,
+  CONSTRAINT fk_assign_person  FOREIGN KEY (person_id)  REFERENCES users (id)   ON DELETE CASCADE,
   CONSTRAINT fk_assign_contest FOREIGN KEY (contest_id) REFERENCES contests (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -64,10 +66,11 @@ CREATE TABLE scores (
   PRIMARY KEY (entry_id, judge_id),
   KEY idx_scores_judge (judge_id),
   CONSTRAINT fk_scores_entry FOREIGN KEY (entry_id) REFERENCES entries (id) ON DELETE CASCADE,
-  CONSTRAINT fk_scores_judge FOREIGN KEY (judge_id) REFERENCES people (id)  ON DELETE CASCADE
+  CONSTRAINT fk_scores_judge FOREIGN KEY (judge_id) REFERENCES users (id)  ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 5. The old global "submissions on/off" setting is replaced by a per-contest open switch. Safe to drop.
 DROP TABLE IF EXISTS settings;
 
--- Then log in at admin.php with ADMIN_PASSWORD: open the Contests page to adjust contests, and add judges on the Judges page.
+-- Then open setup.php in the browser and enter SETUP_KEY (config.php) to create the first administrator. Admins then manage
+-- contests, judges and further administrators in the app. The shared admin password no longer exists.

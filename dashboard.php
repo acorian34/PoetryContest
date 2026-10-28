@@ -42,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stored = null;
         try {
             $pdo->beginTransaction();
-            $pdo->prepare('SELECT id FROM people WHERE id = ? FOR UPDATE')->execute([$user['id']]); // serialize this person's uploads
+            $pdo->prepare('SELECT id FROM users WHERE id = ? FOR UPDATE')->execute([$user['id']]); // serialize this person's uploads
             $cur = $pdo->prepare('SELECT category FROM entries WHERE person_id = ? AND contest_id = ?');
             $cur->execute([$user['id'], $postedContest]);
             $existing = $cur->fetchAll(PDO::FETCH_COLUMN);
@@ -62,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->prepare('INSERT INTO entries (person_id, contest_id, title, category, code, file_stored, file_ext, file_orig, rules_agreed_at)
                                VALUES (?,?,?,?,?,?,?,?,NOW())')
                     ->execute([$user['id'], $postedContest, $title, $category, $code, $stored, $ext, basename($f['name'])]);
-                $pdo->prepare('UPDATE people SET category = ? WHERE id = ?')->execute([$category, $user['id']]); // default for the next contest
+                $pdo->prepare('UPDATE users SET category = ? WHERE id = ?')->execute([$category, $user['id']]); // default for the next contest
                 $pdo->commit();
                 $_SESSION['flash'] = $title;
                 header('Location: dashboard.php');

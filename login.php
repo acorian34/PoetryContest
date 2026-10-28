@@ -13,42 +13,35 @@ $login = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $pw = (string)($_POST['password'] ?? '');
+    $login = trim((string)($_POST['login'] ?? ''));
     usleep(300000); // slow down guessing
 
-    if ($as === 'admin') {
-        if (hash_equals(ADMIN_PASSWORD, $pw)) {
+    // Everyone (entrant, judge, admin) is a row in `users` and signs in with username or email + password.
+    $st = db()->prepare('SELECT * FROM users WHERE username = ? OR email = ? LIMIT 1');
+    $st->execute([$login, strtolower($login)]);
+    $u = $st->fetch();
+    if ($u && password_verify($pw, $u['password_hash'])) {
+        $role = $u['role'];
+        if ($as === 'entrant' && $role === 'contestant') {
             session_regenerate_id(true);
-            $_SESSION['role'] = 'admin';
-            header('Location: admin.php');
+            $_SESSION['user_id'] = (int)$u['id'];
+            header('Location: dashboard.php');
             exit;
         }
-        $error = 'Incorrect password.';
-    } else {
-        // Entrants and judges both sign in with their own account (username or email + password).
-        $login = trim((string)($_POST['login'] ?? ''));
-        $st = db()->prepare('SELECT * FROM people WHERE username = ? OR email = ? LIMIT 1');
-        $st->execute([$login, strtolower($login)]);
-        $u = $st->fetch();
-        if ($u && password_verify($pw, $u['password_hash'])) {
-            $isStaff = in_array($u['role'], ['judge', 'admin'], true);
-            if ($as === 'entrant' && !$isStaff) {
-                session_regenerate_id(true);
-                $_SESSION['user_id'] = (int)$u['id'];
-                header('Location: dashboard.php');
-                exit;
-            }
-            if ($as === 'judge' && $isStaff) {
-                session_regenerate_id(true);
-                $_SESSION['judge_id'] = (int)$u['id'];
-                $_SESSION['role'] = $u['role'];
-                header('Location: ' . ($u['role'] === 'admin' ? 'admin.php' : 'judge.php'));
-                exit;
-            }
-            $error = $as === 'entrant' ? 'This is a judge account. Please use the judge login.'
-                                       : 'This account is not a judge account.';
-        } else {
-            $error = 'Incorrect username/email or password.';
+        if (($as === 'judge' && in_array($role, ['judge', 'admin'], true)) || ($as === 'admin' && $role === 'admin')) {
+            session_regenerate_id(true);
+            $_SESSION['judge_id'] = (int)$u['id'];   // staff session; the role is re-read from the database on every request
+            $_SESSION['role'] = $role;
+            header('Location: ' . ($role === 'admin' ? 'admin.php' : 'judge.php'));
+            exit;
         }
+        $error = match ($as) {
+            'entrant' => 'This is a ' . $role . ' account. Please use the ' . $role . ' login.',
+            'admin'   => 'This account is not an administrator account.',
+            default   => 'This account is not a judge account.',
+        };
+    } else {
+        $error = 'Incorrect username/email or password.';
     }
 }
 
@@ -58,10 +51,8 @@ page_header($as === 'entrant' ? 'Log in' : ucfirst($as) . ' login');
 <?php if ($error): ?><div class="box err"><?= h($error) ?></div><?php endif; ?>
 <form method="post">
   <?= csrf_field() ?>
-  <?php if ($as !== 'admin'): ?>
-    <label>Username or email <input name="login" required autofocus autocomplete="username" value="<?= h($login) ?>"></label>
-  <?php endif; ?>
-  <label>Password <input type="password" name="password" required <?= $as === 'admin' ? 'autofocus' : '' ?> autocomplete="current-password"></label>
+  <label>Username or email <input name="login" required autofocus autocomplete="username" value="<?= h($login) ?>"></label>
+  <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
   <button type="submit">Log in</button>
 </form>
 <?php if ($as === 'entrant'): ?>

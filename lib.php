@@ -49,13 +49,13 @@ function contest_picker(array $list, ?int $selectedId): string {
 }
 function h(?string $s): string { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
-/** The logged-in entrant (a row from `people` with role contestant), or null. */
+/** The logged-in entrant (a row from `users` with role contestant), or null. */
 function current_user(): ?array {
     static $user = false;
     if ($user === false) {
         $user = null;
         if (!empty($_SESSION['user_id'])) {
-            $st = db()->prepare("SELECT * FROM people WHERE id = ? AND role = 'contestant'");
+            $st = db()->prepare("SELECT * FROM users WHERE id = ? AND role = 'contestant'");
             $st->execute([(int)$_SESSION['user_id']]);
             $user = $st->fetch() ?: null;
         }
@@ -128,14 +128,14 @@ function make_code(PDO $pdo, string $category, int $contestId): string {
     throw new RuntimeException('Could not generate a unique code.');
 }
 
-/** The logged-in judge or database admin (a row from `people` whose role is judge or admin), or null.
+/** The logged-in staff member (a row from `users` whose role is judge or admin), or null.
  *  Checked against the database on every request, so demoting a judge takes effect immediately. */
 function current_judge(): ?array {
     static $judge = false;
     if ($judge === false) {
         $judge = null;
         if (!empty($_SESSION['judge_id'])) {
-            $st = db()->prepare("SELECT * FROM people WHERE id = ? AND role IN ('judge','admin')");
+            $st = db()->prepare("SELECT * FROM users WHERE id = ? AND role IN ('judge','admin')");
             $st->execute([(int)$_SESSION['judge_id']]);
             $judge = $st->fetch() ?: null;
         }
@@ -143,9 +143,8 @@ function current_judge(): ?array {
     return $judge;
 }
 
-/** Contests the logged-in judge is assigned to (newest first), or null when not restricted (shared-password admin). */
+/** Contests the logged-in judge is assigned to (newest first), or null when not restricted (admins). */
 function judge_contests(): ?array {
-    if (empty($_SESSION['judge_id'])) return ($_SESSION['role'] ?? '') === 'admin' ? null : [];
     $j = current_judge();
     if (!$j) return [];
     if ($j['role'] === 'admin') return null;
@@ -164,7 +163,7 @@ function judge_can_access(int $contestId): bool {
 }
 
 /** Send the visitor to the login page unless logged in with the needed role (admin can see judge pages too).
- *  The shared ADMIN_PASSWORD login has role 'admin' and no judge_id; judges and database admins sign in with their own account. */
+ *  Judges and admins are database users; the role is re-read on every request so changes take effect immediately. */
 function require_role(string $role): void {
     if (!empty($_SESSION['judge_id'])) {
         $j = current_judge();
@@ -195,3 +194,9 @@ function page_header(string $title, string $extraNav = ''): void { ?>
 function page_footer(): void { ?>
 </main></body></html>
 <?php }
+
+/** Navigation links shared by the administrator pages. */
+function admin_nav(): string {
+    return '<nav><a href="admin.php">Entries</a> <a href="contests.php">Contests</a> <a href="judges.php">Judges</a> '
+         . '<a href="admins.php">Admins</a> <a href="report.php">Report</a> <a href="login.php?logout=1">Log out</a></nav>';
+}

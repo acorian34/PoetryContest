@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!$errors) {
             try {
-                $pdo->prepare("INSERT INTO people (username, password_hash, first_name, last_name, email, phone, category, role)
+                $pdo->prepare("INSERT INTO users (username, password_hash, first_name, last_name, email, phone, category, role)
                                VALUES (?,?,?,?,?,'','','judge')")
                     ->execute([$v['username'], password_hash($password, PASSWORD_DEFAULT), $v['first_name'], $v['last_name'], $v['email']]);
                 $newId = (int)$pdo->lastInsertId();
@@ -54,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($action === 'promote') {
         $login = trim((string)($_POST['login'] ?? ''));
-        $st = $pdo->prepare('SELECT id, role, first_name, last_name FROM people WHERE username = ? OR email = ? LIMIT 1');
+        $st = $pdo->prepare('SELECT id, role, first_name, last_name FROM users WHERE username = ? OR email = ? LIMIT 1');
         $st->execute([$login, strtolower($login)]);
         $u = $st->fetch();
         if (!$u) {
@@ -62,18 +62,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($u['role'] !== 'contestant') {
             $errors[] = 'That account is already a ' . $u['role'] . '.';
         } else {
-            $pdo->prepare("UPDATE people SET role = 'judge' WHERE id = ? AND role = 'contestant'")->execute([$u['id']]);
+            $pdo->prepare("UPDATE users SET role = 'judge' WHERE id = ? AND role = 'contestant'")->execute([$u['id']]);
             flash_redirect($u['first_name'] . ' ' . $u['last_name'] . ' is now a judge and no longer has entrant access. Assign them to a contest below.');
         }
     } elseif ($action === 'demote') {
-        $pdo->prepare("UPDATE people SET role = 'contestant' WHERE id = ? AND role = 'judge'")->execute([(int)($_POST['id'] ?? 0)]);
+        $pdo->prepare("UPDATE users SET role = 'contestant' WHERE id = ? AND role = 'judge'")->execute([(int)($_POST['id'] ?? 0)]);
         $pdo->prepare('DELETE FROM judge_assignments WHERE person_id = ?')->execute([(int)($_POST['id'] ?? 0)]);
         flash_redirect('Judge access removed. The account is now an ordinary entrant account.');
     } elseif ($action === 'assign' || $action === 'unassign') {
         $cid = (int)($_POST['contest_id'] ?? 0);
         $contest = find_contest($cid);
         $id = (int)($_POST['id'] ?? 0);
-        $isJudge = $pdo->prepare("SELECT 1 FROM people WHERE id = ? AND role = 'judge'");
+        $isJudge = $pdo->prepare("SELECT 1 FROM users WHERE id = ? AND role = 'judge'");
         $isJudge->execute([$id]);
         if (!$contest) {
             $errors[] = 'Please choose a contest.';
@@ -91,14 +91,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (strlen($password) < 8 || strlen($password) > 72) {
             $errors[] = 'New password must be 8-72 characters.';
         } else {
-            $pdo->prepare("UPDATE people SET password_hash = ? WHERE id = ? AND role = 'judge'")
+            $pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ? AND role = 'judge'")
                 ->execute([password_hash($password, PASSWORD_DEFAULT), (int)($_POST['id'] ?? 0)]);
             flash_redirect('Password updated.');
         }
     }
 }
 
-$judges = $pdo->query("SELECT id, username, first_name, last_name, email, created_at FROM people
+$judges = $pdo->query("SELECT id, username, first_name, last_name, email, created_at FROM users
                        WHERE role = 'judge' ORDER BY last_name, first_name")->fetchAll();
 $contests = all_contests();
 $assigned = [];  // judge id => [contest id => contest name]
@@ -106,7 +106,7 @@ foreach ($pdo->query('SELECT a.person_id, c.id, c.name FROM judge_assignments a 
     $assigned[$a['person_id']][(int)$a['id']] = $a['name'];
 }
 
-page_header('Judges', '<nav><a href="admin.php">Entries</a> <a href="contests.php">Contests</a> <a href="login.php?logout=1">Log out</a></nav>');
+page_header('Judges', admin_nav());
 ?>
 <h1>Judges (<?= count($judges) ?>)</h1>
 <p class="note">Each judge signs in at the Judge login with their own username (or email) and password. Judges see only anonymous entry codes and poems, and only for the contests they are assigned to. Create contests on the Contests page first.</p>
