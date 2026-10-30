@@ -1,6 +1,6 @@
 <?php
 // ---- EDIT THESE BEFORE GOING LIVE ----
-const CONTEST_NAME    = 'Annual Poetry Contest';   // site title; the individual contests are created on the admin Contests page
+const CONTEST_NAME    = 'New Braunfels Writers Guild Contests';   // site title; the individual contests are created on the admin Contests page
 const SETUP_KEY       = 'change-me-setup';   // only used once, on setup.php, to create the first administrator account
 // Judges and administrators are database users with their own logins: create the first admin on setup.php, then add judges and admins in the app.
 const DEFAULT_MAX_ENTRIES = 2;                // pre-filled when creating a contest; each contest has its own limit
