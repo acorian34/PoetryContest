@@ -41,3 +41,5 @@ label.check input { width: auto; margin-top: 4px; }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand .logo { width: 44px; height: 44px; border-radius: 50%; background: #fff; }
 .biglogo { display: block; width: 180px; max-width: 60%; height: auto; margin: 0 0 12px; }
+/* Header spans the full window: logo and title flush left, navigation flush right */
+header .wrap { max-width: none; padding: 0 20px; }
