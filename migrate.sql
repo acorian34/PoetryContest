@@ -104,3 +104,9 @@ ALTER TABLE users DROP COLUMN category;
 
 -- Then open setup.php in the browser and enter SETUP_KEY (config.php) to create the first administrator. Admins then manage
 -- contests, judges and further administrators in the app. The shared admin password no longer exists.
+
+-- 7. Accounts are never deleted: "delete my account" sets deleted_at, and entries are protected from removal along with the user.
+--    If you ran an earlier version of this file, run only this step 7.
+ALTER TABLE users ADD COLUMN deleted_at TIMESTAMP NULL AFTER role;
+ALTER TABLE entries DROP FOREIGN KEY fk_entries_person;
+ALTER TABLE entries ADD CONSTRAINT fk_entries_person FOREIGN KEY (person_id) REFERENCES users (id) ON DELETE RESTRICT;

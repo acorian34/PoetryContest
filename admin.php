@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
 $rows = [];
 if ($contest) {
     $st = $pdo->prepare('SELECT e.id, e.code, e.title, cc.name AS category_name, cc.id AS category_id, e.file_orig, e.created_at,
-                                p.first_name, p.last_name, p.email, p.phone,
+                                p.first_name, p.last_name, p.email, p.phone, p.deleted_at,
                                 (SELECT AVG(s.score) FROM scores s WHERE s.entry_id = e.id) AS avg_score,
                                 (SELECT COUNT(*) FROM scores s WHERE s.entry_id = e.id) AS score_count
                          FROM entries e JOIN users p ON p.id = e.person_id
@@ -69,7 +69,7 @@ page_header('Admin', admin_nav());
     <td><strong><?= h($r['code']) ?></strong></td>
     <td><?= h($r['category_name']) ?></td>
     <td><?= h($r['title']) ?></td>
-    <td><?= h($r['first_name'] . ' ' . $r['last_name']) ?></td>
+    <td><?= h($r['first_name'] . ' ' . $r['last_name']) ?><?= $r['deleted_at'] ? ' <span class="note">(account closed)</span>' : '' ?></td>
     <td><?= h($r['email']) ?></td>
     <td><?= h($r['phone']) ?></td>
     <td><?= h($r['created_at']) ?></td>

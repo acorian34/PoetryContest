@@ -35,6 +35,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         } catch (PDOException $e) {
             if ((int)($e->errorInfo[1] ?? 0) === 1062) { // duplicate key
+                $d = $pdo->prepare('SELECT 1 FROM users WHERE (username = ? OR email = ?) AND deleted_at IS NOT NULL LIMIT 1');
+                $d->execute([$v['username'], $v['email']]);
+                if ($d->fetch()) {
+                    $errors[] = 'That username or email address belongs to a closed account. Please contact the contest organisers.';
+                } else
                 $errors[] = stripos($e->getMessage(), 'username') !== false
                     ? 'That username is already taken. Please choose another.'
                     : 'An account with that email address already exists. Try logging in instead.';

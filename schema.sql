@@ -9,6 +9,7 @@ CREATE TABLE users (
   email         VARCHAR(190) NOT NULL,
   phone         VARCHAR(40)  NOT NULL,
   role          ENUM('contestant','judge','admin') NOT NULL DEFAULT 'contestant',
+  deleted_at    TIMESTAMP NULL,   -- set when the user deletes their account; the row and their entries are kept
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uq_users_username (username),
   UNIQUE KEY uq_users_email (email),
@@ -57,7 +58,7 @@ CREATE TABLE entries (
   KEY idx_entries_person_contest (person_id, contest_id),
   KEY idx_entries_category (category_id),
   CONSTRAINT fk_entries_person FOREIGN KEY (person_id)
-    REFERENCES users (id) ON DELETE CASCADE,
+    REFERENCES users (id) ON DELETE RESTRICT,
   CONSTRAINT fk_entries_contest FOREIGN KEY (contest_id)
     REFERENCES contests (id) ON DELETE RESTRICT,
   CONSTRAINT fk_entries_category FOREIGN KEY (category_id)

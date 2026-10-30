@@ -64,15 +64,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!password_verify((string)($_POST['delete_password'] ?? ''), $user['password_hash'])) $errors[] = 'Your password is not correct, so the account was not deleted.';
         if (empty($_POST['confirm_delete'])) $errors[] = 'Please tick the box to confirm you want to delete your account.';
         if (!$errors) {
-            $st = $pdo->prepare('SELECT file_stored FROM entries WHERE person_id = ?');
-            $st->execute([$user['id']]);
-            $files = $st->fetchAll(PDO::FETCH_COLUMN);
-            // Deleting the user also removes their entries and any scores on them (foreign keys cascade).
-            $pdo->prepare("DELETE FROM users WHERE id = ? AND role = 'contestant'")->execute([$user['id']]);
-            foreach ($files as $stored) {
-                $path = DATA_DIR . '/files/' . basename($stored);
-                if (is_file($path)) unlink($path);
-            }
+            // Nothing is deleted: the account is flagged as deleted (it can no longer sign in) and all entries, files and scores stay on record.
+            $pdo->prepare("UPDATE users SET deleted_at = NOW() WHERE id = ? AND role = 'contestant' AND deleted_at IS NULL")->execute([$user['id']]);
             session_destroy();
             header('Location: index.php');
             exit;
@@ -122,12 +115,12 @@ page_header('My profile', user_nav());
 </form>
 
 <h2>Delete my account</h2>
-<form method="post" novalidate onsubmit="return confirm('Permanently delete your account and all of your entries?');">
+<form method="post" novalidate onsubmit="return confirm('Delete your account? You will no longer be able to log in. Your entries stay on record.');">
   <?= csrf_field() ?>
   <input type="hidden" name="action" value="delete">
-  <p>This permanently deletes your account, your contact details
-    <?= $entryCount ? 'and your <strong>' . $entryCount . ' submitted ' . ($entryCount === 1 ? 'entry' : 'entries') . '</strong> (including the uploaded files and any judges\' scores)' : '' ?>.
-    It cannot be undone, and deleted entries will no longer be judged.</p>
+  <p>This closes your account: you will no longer be able to log in, and you cannot undo it yourself.
+    <?= $entryCount ? 'Your <strong>' . $entryCount . ' submitted ' . ($entryCount === 1 ? 'entry' : 'entries') . '</strong> will stay on record with the contests they were submitted to and will still be judged.' : '' ?>
+    Your name and contact details are kept so the contest organisers can check entries if a question ever comes up.</p>
   <label>Your password <input type="password" name="delete_password" required autocomplete="current-password"></label>
   <label class="check"><input type="checkbox" name="confirm_delete" value="1" required> I understand this cannot be undone.</label>
   <button type="submit" class="danger">Delete my account</button>

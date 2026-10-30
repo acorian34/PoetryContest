@@ -20,7 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $st = db()->prepare('SELECT * FROM users WHERE username = ? OR email = ? LIMIT 1');
     $st->execute([$login, strtolower($login)]);
     $u = $st->fetch();
-    if ($u && password_verify($pw, $u['password_hash'])) {
+    if ($u && $u['deleted_at'] === null && password_verify($pw, $u['password_hash'])) {
         $role = $u['role'];
         if ($as === 'entrant' && $role === 'contestant') {
             session_regenerate_id(true);

@@ -23,7 +23,7 @@ if ($contest) {
     $st->execute([$cid]);
     foreach ($st->fetchAll() as $j) $judges[(int)$j['id']] = $j;
 
-    $st = $pdo->prepare('SELECT e.id, e.code, e.title, cc.name AS category_name, cc.id AS category_id, e.created_at, u.first_name, u.last_name, u.email, u.phone
+    $st = $pdo->prepare('SELECT e.id, e.code, e.title, cc.name AS category_name, cc.id AS category_id, e.created_at, u.first_name, u.last_name, u.email, u.phone, u.deleted_at
                          FROM entries e JOIN users u ON u.id = e.person_id
                          JOIN contest_categories cc ON cc.id = e.category_id
                          WHERE e.contest_id = ? ORDER BY cc.sort_order, cc.id, e.code');
@@ -68,14 +68,14 @@ if ($contest && isset($_GET['csv']) && ($complete || isset($_GET['interim']))) {
     header('Content-Disposition: attachment; filename="poetry-report-contest-' . $cid . '-' . strtolower($status) . '.csv"');
     $out = fopen('php://output', 'w');
     fwrite($out, "\xEF\xBB\xBF"); // UTF-8 BOM so Excel reads accents correctly
-    $head = ['Contest', 'Status', 'Code', 'Category', 'Rank in category', 'Title', 'First name', 'Last name', 'Email', 'Phone', 'Submitted', 'Average score', 'Judges scored'];
+    $head = ['Contest', 'Status', 'Code', 'Category', 'Rank in category', 'Title', 'First name', 'Last name', 'Email', 'Phone', 'Submitted', 'Account closed', 'Average score', 'Judges scored'];
     foreach ($judges as $j) $head[] = 'Score: ' . $j['first_name'] . ' ' . $j['last_name'];
     fputcsv($out, array_map($safe, $head), ',', '"', '');
     foreach ($entries as $e) {
         $s = $scores[(int)$e['id']] ?? [];
         $row = [$safe($contest['name']), $status, $e['code'], $e['category_name'], $e['rank'] ?? '', $safe($e['title']),
                 $safe($e['first_name']), $safe($e['last_name']), $e['email'], $safe($e['phone']), $e['created_at'],
-                $e['avg'] === null ? '' : round($e['avg'], 2), count($s) . ' of ' . count($judges)];
+                $e['deleted_at'] ? 'Yes' : '', $e['avg'] === null ? '' : round($e['avg'], 2), count($s) . ' of ' . count($judges)];
         foreach ($judges as $jid => $_) $row[] = $s[$jid] ?? '';
         fputcsv($out, $row, ',', '"', '');
     }
@@ -121,7 +121,7 @@ page_header('Report', admin_nav());
     <td><strong><?= h($e['code']) ?></strong></td>
     <td><?= h($e['category_name']) ?></td>
     <td><?= h($e['title']) ?></td>
-    <td><?= h($e['first_name'] . ' ' . $e['last_name']) ?></td>
+    <td><?= h($e['first_name'] . ' ' . $e['last_name']) ?><?= $e['deleted_at'] ? ' <span class="note">(account closed)</span>' : '' ?></td>
     <td><?= h($e['email']) ?></td>
     <td><?= h($e['phone']) ?></td>
     <?php foreach ($judges as $jid => $_): ?><td><?= isset($s[$jid]) ? (int)$s[$jid] : '-' ?></td><?php endforeach; ?>

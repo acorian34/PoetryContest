@@ -55,7 +55,7 @@ function current_user(): ?array {
     if ($user === false) {
         $user = null;
         if (!empty($_SESSION['user_id'])) {
-            $st = db()->prepare("SELECT * FROM users WHERE id = ? AND role = 'contestant'");
+            $st = db()->prepare("SELECT * FROM users WHERE id = ? AND role = 'contestant' AND deleted_at IS NULL");
             $st->execute([(int)$_SESSION['user_id']]);
             $user = $st->fetch() ?: null;
         }
