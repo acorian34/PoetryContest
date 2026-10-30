@@ -163,13 +163,6 @@ if (!$creating && $viewId) {
     $detail = $st->fetch() ?: null;
 }
 
-/** Open / Closed label, with the reason when a contest is closed. */
-function status_label(array $c): string {
-    if ($c['accepting']) return 'Open';
-    if (!$c['is_open']) return 'Closed (switched off)';
-    return $c['start_date'] > date('Y-m-d') ? 'Closed (not started)' : 'Closed (ended)';
-}
-
 page_header('Contests', admin_nav());
 ?>
 <?php if ($notice): ?><div class="box ok"><?= h($notice) ?></div><?php endif; ?>

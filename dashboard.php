@@ -3,177 +3,67 @@ require __DIR__ . '/lib.php';
 $user = require_user();
 $pdo = db();
 
-$errors = [];
-$success = $_SESSION['flash'] ?? null;
-unset($_SESSION['flash']);
-$title = '';
+$flash = $_SESSION['flash_dashboard'] ?? null;
+unset($_SESSION['flash_dashboard']);
 
-// This person's entries per contest (limit and category rule apply per contest)
-$openContests = all_contests(true);
-$postedContest = 0;
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    csrf_check();
-    $title = trim((string)($_POST['title'] ?? ''));
-    $categoryId = (int)($_POST['category_id'] ?? 0);
-    $postedContest = (int)($_POST['contest_id'] ?? 0);
-    $contest = find_contest($postedContest);
-
-    if (!$contest) $errors[] = 'Please choose a contest.';
-    elseif (!$contest['accepting']) $errors[] = 'That contest is not accepting entries right now (it is closed or outside its start and end dates).';
-    if (empty($_POST['agree_rules'])) $errors[] = 'You must agree to the contest rules to submit a poem.';
-    if ($title === '' || mb_strlen($title) > 150) $errors[] = 'Please enter a title for your poem.';
-    $category = null;
-    if ($contest) {
-        foreach (contest_categories($postedContest) as $cc) if ((int)$cc['id'] === $categoryId) $category = $cc;
-        if (!$category) $errors[] = 'Please select a category for this contest.';
-    }
-
-    $f = $_FILES['poem'] ?? null;
-    $ext = '';
-    if (!$f || $f['error'] === UPLOAD_ERR_NO_FILE) {
-        $errors[] = 'Please attach your poem as a document.';
-    } elseif ($f['error'] !== UPLOAD_ERR_OK) {
-        $errors[] = ($f['error'] === UPLOAD_ERR_INI_SIZE || $f['error'] === UPLOAD_ERR_FORM_SIZE)
-            ? 'That file is too large.' : 'The file upload failed. Please try again.';
-    } else {
-        $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
-        if ($problem = check_upload($f['tmp_name'], $ext)) $errors[] = $problem;
-        if ($f['size'] > MAX_FILE_BYTES) $errors[] = 'File must be under ' . (MAX_FILE_BYTES / 1048576) . ' MB.';
-    }
-
-    if (!$errors) {
-        $stored = null;
-        try {
-            $pdo->beginTransaction();
-            $pdo->prepare('SELECT id FROM users WHERE id = ? FOR UPDATE')->execute([$user['id']]); // serialize this person's uploads
-            $cur = $pdo->prepare('SELECT id FROM entries WHERE person_id = ? AND contest_id = ?');
-            $cur->execute([$user['id'], $postedContest]);
-            $existing = $cur->fetchAll(PDO::FETCH_COLUMN);
-
-            if (count($existing) >= (int)$contest['max_entries']) {
-                $errors[] = 'You have already submitted the maximum of ' . (int)$contest['max_entries'] . ' poem(s) for ' . $contest['name'] . '.';
-                $pdo->rollBack();
-            } else {
-                $stored = bin2hex(random_bytes(16)) . '.' . $ext;
-                if (!move_uploaded_file($f['tmp_name'], DATA_DIR . '/files/' . $stored)) {
-                    throw new RuntimeException('Could not save the uploaded file.');
-                }
-                $code = make_code($pdo, $category['code_prefix'], $postedContest);
-                $pdo->prepare('INSERT INTO entries (person_id, contest_id, title, category_id, code, file_stored, file_ext, file_orig, rules_agreed_at)
-                               VALUES (?,?,?,?,?,?,?,?,NOW())')
-                    ->execute([$user['id'], $postedContest, $title, $categoryId, $code, $stored, $ext, basename($f['name'])]);
-                $pdo->commit();
-                $_SESSION['flash'] = $title;
-                header('Location: dashboard.php');
-                exit;
-            }
-        } catch (Throwable $e) {
-            if ($pdo->inTransaction()) $pdo->rollBack();
-            if ($stored && is_file(DATA_DIR . '/files/' . $stored)) unlink(DATA_DIR . '/files/' . $stored);
-            error_log($e->getMessage());
-            $errors[] = 'Something went wrong saving your entry. Please try again.';
-        }
-    }
-}
-
-$st = $pdo->prepare('SELECT e.title, cc.name AS category_name, e.file_orig, e.created_at, e.contest_id, c.name AS contest_name
-                     FROM entries e JOIN contests c ON c.id = e.contest_id JOIN contest_categories cc ON cc.id = e.category_id
-                     WHERE e.person_id = ? ORDER BY e.contest_id DESC, e.id');
+// Contests this person has entered that have not ended yet (past contests are on the history page)
+$st = $pdo->prepare('SELECT c.*, ' . CONTEST_ACCEPTING . ' AS accepting, COUNT(e.id) AS used
+                     FROM contests c JOIN entries e ON e.contest_id = c.id
+                     WHERE e.person_id = ? AND c.end_date >= CURDATE()
+                     GROUP BY c.id ORDER BY c.start_date DESC, c.id DESC');
 $st->execute([$user['id']]);
-$mine = $st->fetchAll();
+$entered = $st->fetchAll();
 
-// Per contest: how many poems used
-$used = [];
-foreach ($mine as $m) {
-    $used[$m['contest_id']] = ($used[$m['contest_id']] ?? 0) + 1;
-}
-$enterable = array_values(array_filter($openContests, fn($c) => ($used[$c['id']] ?? 0) < (int)$c['max_entries']));
+$usedByContest = [];
+$st = $pdo->prepare('SELECT contest_id, COUNT(*) FROM entries WHERE person_id = ? GROUP BY contest_id');
+$st->execute([$user['id']]);
+foreach ($st->fetchAll(PDO::FETCH_NUM) as [$cid, $n]) $usedByContest[(int)$cid] = (int)$n;
 
-page_header('My entries', '<nav><a href="login.php?logout=1">Log out</a></nav>');
+$open = all_contests(true);
+usort($open, fn($a, $b) => [$b['start_date'], $b['id']] <=> [$a['start_date'], $a['id']]);
+
+page_header('Dashboard', user_nav());
 ?>
 <h1>Welcome, <?= h($user['first_name']) ?></h1>
+<?php if ($flash): ?><div class="box ok"><?= h($flash) ?></div><?php endif; ?>
+<p>
+  <a class="btn alt" href="history.php">My past contests and entries</a>
+  <a class="btn alt" href="profile.php">Edit or delete my profile</a>
+</p>
 
-<?php if ($success !== null): ?>
-  <div class="box ok"><strong>Thank you!</strong> Your poem &ldquo;<?= h($success) ?>&rdquo; was received.</div>
-<?php endif; ?>
-<?php if ($errors): ?>
-  <div class="box err"><ul><?php foreach ($errors as $e) echo '<li>' . h($e) . '</li>'; ?></ul></div>
-<?php endif; ?>
-
-<h2>Your poems</h2>
-<?php if (!$mine): ?>
-  <p class="note">You have not submitted a poem yet.</p>
+<h2>Contests you have entered</h2>
+<?php if (!$entered): ?>
+  <p class="note">You have not entered a current contest yet. Pick one from the open contests below.</p>
 <?php else: ?>
   <div class="tablewrap"><table>
-    <tr><th>Contest</th><th>Title</th><th>Category</th><th>File</th><th>Submitted</th></tr>
-    <?php foreach ($mine as $m): ?>
-      <tr><td><?= h($m['contest_name']) ?></td><td><?= h($m['title']) ?></td>
-          <td><?= h($m['category_name']) ?></td><td><?= h($m['file_orig']) ?></td><td><?= h($m['created_at']) ?></td></tr>
+    <tr><th>Contest</th><th>Start date</th><th>Close date</th><th>Status</th><th>Your entries</th><th></th></tr>
+    <?php foreach ($entered as $c): ?>
+    <tr>
+      <td><a href="contest.php?id=<?= (int)$c['id'] ?>"><strong><?= h($c['name']) ?></strong></a></td>
+      <td><?= h(fmt_date($c['start_date'])) ?></td>
+      <td><?= h(fmt_date($c['end_date'])) ?></td>
+      <td><?= h(status_label($c)) ?></td>
+      <td><?= (int)$c['used'] ?> of <?= (int)$c['max_entries'] ?></td>
+      <td><a href="contest.php?id=<?= (int)$c['id'] ?>">View</a></td>
+    </tr>
     <?php endforeach; ?>
   </table></div>
 <?php endif; ?>
 
-<h2>Open contests</h2>
-<?php if (!$openContests): ?>
+<h2>Contests open for entries</h2>
+<?php if (!$open): ?>
   <div class="box err">There are no contests open for entries right now.</div>
 <?php else: ?>
-  <ul>
-  <?php foreach ($openContests as $c): $n = $used[$c['id']] ?? 0; ?>
-    <li><strong><?= h($c['name']) ?></strong> (<?= h(date('M j, Y', strtotime($c['start_date']))) ?> to <?= h(date('M j, Y', strtotime($c['end_date']))) ?>) &mdash; <?= $n ?> of <?= (int)$c['max_entries'] ?> poems used <?php $names = array_column(contest_categories((int)$c['id']), 'name'); ?>
-      <br><span class="note">Categories: <?= h(implode(', ', $names)) ?></span>
+  <ul class="contestlist">
+  <?php foreach ($open as $c): $n = $usedByContest[(int)$c['id']] ?? 0; ?>
+    <li>
+      <strong><a href="contest.php?id=<?= (int)$c['id'] ?>"><?= h($c['name']) ?></a></strong>
+      <span class="note">&mdash; <?= h(fmt_date($c['start_date'])) ?> to <?= h(fmt_date($c['end_date'])) ?>
+        &middot; <?= $n ?> of <?= (int)$c['max_entries'] ?> entries used</span>
       <?php if (trim((string)$c['description']) !== ''): ?><br><span class="note"><?= nl2br(h($c['description'])) ?></span><?php endif; ?>
-      <details><summary>Contest rules</summary><div class="rules"><?= nl2br(h($c['rules'])) ?></div></details></li>
+      <br><a href="contest.php?id=<?= (int)$c['id'] ?>"><?= $n >= (int)$c['max_entries'] ? 'View details and rules' : 'View details, rules and enter' ?></a>
+    </li>
   <?php endforeach; ?>
   </ul>
 <?php endif; ?>
-
-<?php if ($enterable): ?>
-  <h2>Submit a poem</h2>
-  <form method="post" enctype="multipart/form-data" novalidate>
-    <?= csrf_field() ?>
-    <label>Contest
-      <select name="contest_id" required>
-        <?php foreach ($enterable as $c): ?>
-          <option value="<?= (int)$c['id'] ?>" <?= $postedContest === (int)$c['id'] ? 'selected' : '' ?>><?= h($c['name']) ?></option>
-        <?php endforeach; ?>
-      </select>
-    </label>
-    <label>Category
-      <select name="category_id" id="category_id" required>
-        <?php foreach ($enterable as $c): foreach (contest_categories((int)$c['id']) as $cc): ?>
-          <option value="<?= (int)$cc['id'] ?>" data-contest="<?= (int)$c['id'] ?>"><?= h($cc['name']) ?></option>
-        <?php endforeach; endforeach; ?>
-      </select>
-    </label>
-    <label class="check"><input type="checkbox" name="agree_rules" value="1" required<?= !empty($_POST['agree_rules']) ? ' checked' : '' ?>>
-      I have read and agree to the rules of the selected contest (see &ldquo;Contest rules&rdquo; above).</label>
-    <label>Poem title <input name="title" required maxlength="150" value="<?= h($title) ?>"></label>
-    <label>Poem document (<?= h(implode(', ', ALLOWED_EXT)) ?>; max <?= MAX_FILE_BYTES / 1048576 ?> MB)
-      <input type="file" name="poem" required accept=".<?= h(implode(',.', ALLOWED_EXT)) ?>">
-    </label>
-    <p class="note">Please do <strong>not</strong> put your name inside the poem document &mdash; entries are judged anonymously.</p>
-    <button type="submit">Submit poem</button>
-  </form>
-<?php elseif ($openContests): ?>
-  <p class="note">You have used all of your submissions in the open contests. Good luck!</p>
-<?php endif; ?>
-<script>
-// Show only the categories of the selected contest.
-(function () {
-  var contest = document.querySelector('select[name=contest_id]'), cat = document.getElementById('category_id');
-  if (!contest || !cat) return;
-  function sync() {
-    var first = null;
-    Array.prototype.forEach.call(cat.options, function (o) {
-      var show = o.getAttribute('data-contest') === contest.value;
-      o.hidden = o.disabled = !show;
-      if (show && !first) first = o;
-    });
-    if (cat.selectedOptions[0] && cat.selectedOptions[0].disabled && first) first.selected = true;
-  }
-  contest.addEventListener('change', sync);
-  sync();
-})();
-</script>
 <?php page_footer();

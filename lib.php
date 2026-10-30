@@ -220,3 +220,18 @@ function admin_nav(): string {
     return '<nav><a href="admin.php">Entries</a> <a href="contests.php">Contests</a> <a href="judges.php">Judges</a> '
          . '<a href="admins.php">Admins</a> <a href="report.php">Report</a> <a href="login.php?logout=1">Log out</a></nav>';
 }
+
+/** Open / Closed label for a contest row (needs the `accepting` column), with the reason when it is closed. */
+function status_label(array $c): string {
+    if ($c['accepting']) return 'Open';
+    if (!$c['is_open']) return 'Closed (switched off)';
+    return $c['start_date'] > date('Y-m-d') ? 'Closed (not started)' : 'Closed (ended)';
+}
+
+/** Navigation for logged-in entrants. */
+function user_nav(): string {
+    return '<nav><a href="dashboard.php">Dashboard</a> <a href="history.php">My history</a> '
+         . '<a href="profile.php">My profile</a> <a href="login.php?logout=1">Log out</a></nav>';
+}
+
+function fmt_date(string $d): string { return date('M j, Y', strtotime($d)); }

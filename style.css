@@ -47,3 +47,5 @@ label.check input { width: auto; margin-top: 4px; }
 @media (max-width: 560px) { .hero { flex-direction: column; align-items: flex-start; gap: 8px; } .biglogo { width: 110px; height: 110px; } }
 /* Header spans the full window: logo and title flush left, navigation flush right */
 header .wrap { max-width: none; padding: 0 20px; }
+ul.contestlist { padding-left: 20px; }
+ul.contestlist li { margin-bottom: 14px; }
