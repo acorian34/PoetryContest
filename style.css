@@ -40,6 +40,10 @@ label.check input { width: auto; margin-top: 4px; }
 .rules { background: #f4f1ea; border: 1px solid #ddd; border-radius: 4px; padding: 8px 12px; margin: 6px 0; max-width: 640px; font-size: .9rem; }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand .logo { width: 44px; height: 44px; border-radius: 50%; background: #fff; }
-.biglogo { display: block; width: 180px; max-width: 60%; height: auto; margin: 0 0 12px; }
+.hero { display: flex; align-items: center; gap: 20px; margin-bottom: 16px; }
+.hero h1 { margin-bottom: 6px; }
+.hero .lead { margin: 0; }
+.biglogo { width: 140px; height: 140px; flex: none; }
+@media (max-width: 560px) { .hero { flex-direction: column; align-items: flex-start; gap: 8px; } .biglogo { width: 110px; height: 110px; } }
 /* Header spans the full window: logo and title flush left, navigation flush right */
 header .wrap { max-width: none; padding: 0 20px; }

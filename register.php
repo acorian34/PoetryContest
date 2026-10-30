@@ -48,8 +48,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 page_header('Register');
 ?>
-<h1>Create your account</h1>
-<p class="lead">Already registered? <a href="login.php">Log in</a>.</p>
+<div class="hero">
+  <img src="images/logo.png" alt="<?= h(CONTEST_NAME) ?> emblem" class="biglogo">
+  <div>
+    <h1>Create your account</h1>
+    <p class="lead">Already registered? <a href="login.php">Log in</a>.</p>
+  </div>
+</div>
 
 <?php if ($errors): ?>
   <div class="box err"><ul><?php foreach ($errors as $e) echo '<li>' . h($e) . '</li>'; ?></ul></div>
