@@ -10,9 +10,9 @@ $today = date('Y-m-d');
 $v = ['categories' => "Poetry
 Prose", 'start_date' => $today, 'end_date' => date('Y-m-d', strtotime('+3 months')), 'rules' => '', 'name' => '', 'description' => '', 'max_entries' => (string)DEFAULT_MAX_ENTRIES];
 
-function flash_redirect(string $msg): never {
+function flash_redirect(string $msg, ?int $id = null): never {
     $_SESSION['flash_contests'] = $msg;
-    header('Location: contests.php');
+    header('Location: contests.php' . ($id ? '?id=' . $id : ''));
     exit;
 }
 
@@ -78,14 +78,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $ins->execute([$newId, $name, $prefix, $i + 1]);
                 }
                 $pdo->commit();
-                flash_redirect('Contest created and open for entries: ' . $f['name']);
+                flash_redirect('Contest created and open for entries: ' . $f['name'], $newId);
             }
         } elseif ($action === 'update') {
             $f = contest_fields($_POST, $errors);
             if (!$errors) {
                 $pdo->prepare('UPDATE contests SET name = ?, description = ?, rules = ?, start_date = ?, end_date = ?, max_entries = ? WHERE id = ?')
                     ->execute([$f['name'], $f['description'], $f['rules'], $f['start_date'], $f['end_date'], $f['max_entries'], $id]);
-                flash_redirect('Contest updated.');
+                flash_redirect('Contest updated.', $id);
             }
         } elseif ($action === 'cat_add' || $action === 'cat_rename' || $action === 'cat_delete') {
             $name = trim((string)($_POST['name'] ?? ''));
@@ -99,14 +99,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $pdo->prepare('INSERT INTO contest_categories (contest_id, name, code_prefix, sort_order)
                                    SELECT ?, ?, ?, COALESCE(MAX(sort_order), 0) + 1 FROM contest_categories WHERE contest_id = ?')
                         ->execute([$id, $name, $prefix, $id]);
-                    flash_redirect('Category added.');
+                    flash_redirect('Category added.', $id);
                 }
             } elseif ($action === 'cat_rename') {
                 if ($name === '' || mb_strlen($name) > 60) {
                     $errors[] = 'Please enter a category name (60 characters or fewer).';
                 } else {
                     $pdo->prepare('UPDATE contest_categories SET name = ? WHERE id = ?')->execute([$name, (int)($_POST['cat_id'] ?? 0)]);
-                    flash_redirect('Category renamed.');
+                    flash_redirect('Category renamed.', $id);
                 }
             } else {
                 $cid = (int)($_POST['cat_id'] ?? 0);
@@ -120,12 +120,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $errors[] = 'A contest needs at least one category.';
                 } else {
                     $pdo->prepare('DELETE FROM contest_categories WHERE id = ? AND contest_id = ?')->execute([$cid, $id]);
-                    flash_redirect('Category deleted.');
+                    flash_redirect('Category deleted.', $id);
                 }
             }
         } elseif ($action === 'open' || $action === 'close') {
             $pdo->prepare('UPDATE contests SET is_open = ? WHERE id = ?')->execute([$action === 'open' ? 1 : 0, $id]);
-            flash_redirect($action === 'open' ? 'Contest is now open for entries.' : 'Contest is now closed to new entries.');
+            flash_redirect($action === 'open' ? 'Contest is now open for entries.' : 'Contest is now closed to new entries.', $id);
         } elseif ($action === 'delete') {
             $n = $pdo->prepare('SELECT COUNT(*) FROM entries WHERE contest_id = ?');
             $n->execute([$id]);
@@ -147,32 +147,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$rows = $pdo->query('SELECT c.*, ' . CONTEST_ACCEPTING . ' AS accepting,
-        (SELECT COUNT(*) FROM entries e WHERE e.contest_id = c.id) AS entry_count,
-        (SELECT COUNT(*) FROM judge_assignments a WHERE a.contest_id = c.id) AS judge_count
-    FROM contests c ORDER BY c.id DESC')->fetchAll();
-$catsByContest = [];
-foreach ($pdo->query('SELECT cc.*, (SELECT COUNT(*) FROM entries e WHERE e.category_id = cc.id) AS entry_count FROM contest_categories cc ORDER BY cc.sort_order, cc.id') as $cc) {
-    $catsByContest[$cc['contest_id']][] = $cc;
+
+// Which screen: the list (default), the create form (?new=1), or one contest's details (?id=N)
+$viewId = (int)($_GET['id'] ?? $_POST['id'] ?? 0);
+$creating = isset($_GET['new']) || (($_POST['action'] ?? '') === 'create');
+$status = ' ' . CONTEST_ACCEPTING . ' AS accepting';
+
+$detail = null;
+if (!$creating && $viewId) {
+    $st = $pdo->prepare('SELECT c.*,' . $status . ',
+            (SELECT COUNT(*) FROM entries e WHERE e.contest_id = c.id) AS entry_count,
+            (SELECT COUNT(*) FROM judge_assignments a WHERE a.contest_id = c.id) AS judge_count
+        FROM contests c WHERE c.id = ?');
+    $st->execute([$viewId]);
+    $detail = $st->fetch() ?: null;
+}
+
+/** Open / Closed label, with the reason when a contest is closed. */
+function status_label(array $c): string {
+    if ($c['accepting']) return 'Open';
+    if (!$c['is_open']) return 'Closed (switched off)';
+    return $c['start_date'] > date('Y-m-d') ? 'Closed (not started)' : 'Closed (ended)';
 }
 
 page_header('Contests', admin_nav());
 ?>
-<h1>Contests (<?= count($rows) ?>)</h1>
-<p class="note">Several contests can run at once. A contest accepts entries only between its start and end dates and while its open switch is on. Entrants choose which open contests to enter; the entries-per-person limit applies to each contest separately.</p>
-
 <?php if ($notice): ?><div class="box ok"><?= h($notice) ?></div><?php endif; ?>
 <?php if ($errors): ?>
   <div class="box err"><ul><?php foreach ($errors as $e) echo '<li>' . h($e) . '</li>'; ?></ul></div>
 <?php endif; ?>
 
-<?php foreach ($rows as $c): ?>
+<?php if ($creating): ?>
+<p><a href="contests.php">&larr; All contests</a></p>
+<h1>Create a contest</h1>
+<form method="post" novalidate>
+  <?= csrf_field() ?>
+  <input type="hidden" name="action" value="create">
+  <label>Name <input name="name" required maxlength="150" value="<?= h($v['name']) ?>"></label>
+  <label>Description (shown to entrants) <textarea name="description" rows="2" maxlength="5000" style="width:100%"><?= h($v['description']) ?></textarea></label>
+  <div class="row">
+    <label>Start date <input type="date" name="start_date" required value="<?= h($v['start_date']) ?>"></label>
+    <label>End date (last day entries are accepted) <input type="date" name="end_date" required value="<?= h($v['end_date']) ?>"></label>
+  </div>
+  <label>Contest rules (entrants must agree to these when submitting) <textarea name="rules" rows="8" maxlength="20000" required style="width:100%"><?= h($v['rules']) ?></textarea></label>
+  <label>Max submissions per person <input type="number" name="max_entries" min="1" max="20" required value="<?= h($v['max_entries']) ?>"></label>
+  <label>Categories (one per line; entrants choose one for each entry) <textarea name="categories" rows="5" required style="width:100%"><?= h($v['categories']) ?></textarea></label>
+  <button type="submit">Create contest</button>
+</form>
+
+<?php elseif ($detail): $c = $detail; ?>
+<p><a href="contests.php">&larr; All contests</a></p>
+<h1><?= h($c['name']) ?></h1>
 <form method="post">
   <?= csrf_field() ?>
   <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">
-  <p><strong><?= $c['accepting'] ? 'ACCEPTING ENTRIES' : ($c['is_open'] ? 'OUTSIDE ITS DATES' : 'CLOSED') ?></strong> &middot;
+  <p><strong><?= h(status_label($c)) ?></strong> &middot;
      <?= (int)$c['entry_count'] ?> entries &middot; <?= (int)$c['judge_count'] ?> judges
-     &middot; <a href="admin.php?contest=<?= (int)$c['id'] ?>">View entries</a></p>
+     &middot; <a href="admin.php?contest=<?= (int)$c['id'] ?>">View entries</a>
+     &middot; <a href="report.php?contest=<?= (int)$c['id'] ?>">Report</a></p>
   <label>Name <input name="name" required maxlength="150" value="<?= h($c['name']) ?>"></label>
   <label>Description (shown to entrants) <textarea name="description" rows="2" maxlength="5000" style="width:100%"><?= h($c['description']) ?></textarea></label>
   <div class="row">
@@ -188,9 +220,15 @@ page_header('Contests', admin_nav());
     <button type="submit" name="action" value="delete" class="danger" formnovalidate onclick="return confirm('Delete this contest?');">Delete</button>
   <?php endif; ?>
 </form>
-<h3 style="margin-bottom:6px">Categories for this contest</h3>
+
+<h2>Categories</h2>
+<?php
+$cats = $pdo->prepare('SELECT cc.*, (SELECT COUNT(*) FROM entries e WHERE e.category_id = cc.id) AS entry_count
+                       FROM contest_categories cc WHERE cc.contest_id = ? ORDER BY cc.sort_order, cc.id');
+$cats->execute([$c['id']]);
+?>
 <div class="tablewrap"><table style="max-width:640px">
-  <?php foreach ($catsByContest[$c['id']] ?? [] as $cc): ?>
+  <?php foreach ($cats->fetchAll() as $cc): ?>
   <tr>
     <td>
       <form method="post" class="scoreform">
@@ -214,23 +252,36 @@ page_header('Contests', admin_nav());
     </form>
   </td></tr>
 </table></div>
-<br>
-<?php endforeach; ?>
-<?php if (!$rows): ?><p class="note">No contests yet. Create the first one below.</p><?php endif; ?>
 
-<h2>Create a contest</h2>
-<form method="post" novalidate>
-  <?= csrf_field() ?>
-  <input type="hidden" name="action" value="create">
-  <label>Name <input name="name" required maxlength="150" value="<?= h($v['name']) ?>"></label>
-  <label>Description (shown to entrants) <textarea name="description" rows="2" maxlength="5000" style="width:100%"><?= h($v['description']) ?></textarea></label>
-  <div class="row">
-    <label>Start date <input type="date" name="start_date" required value="<?= h($v['start_date']) ?>"></label>
-    <label>End date (last day entries are accepted) <input type="date" name="end_date" required value="<?= h($v['end_date']) ?>"></label>
-  </div>
-  <label>Contest rules (entrants must agree to these when submitting) <textarea name="rules" rows="8" maxlength="20000" required style="width:100%"><?= h($v['rules']) ?></textarea></label>
-  <label>Max submissions per person <input type="number" name="max_entries" min="1" max="20" required value="<?= h($v['max_entries']) ?>"></label>
-  <label>Categories (one per line; entrants choose one for each entry) <textarea name="categories" rows="5" required style="width:100%"><?= h($v['categories']) ?></textarea></label>
-  <button type="submit">Create contest</button>
-</form>
+<?php else: ?>
+<?php
+if ($viewId) echo '<div class="box err">That contest was not found.</div>';
+// Newest first: by start date, then end date, then id for contests that start on the same day
+$rows = $pdo->query('SELECT c.*,' . $status . ',
+        (SELECT COUNT(*) FROM entries e WHERE e.contest_id = c.id) AS entry_count
+    FROM contests c ORDER BY c.start_date DESC, c.end_date DESC, c.id DESC')->fetchAll();
+?>
+<h1>Contests (<?= count($rows) ?>)</h1>
+<p><a class="btn" href="contests.php?new=1">Create a contest</a></p>
+<p class="note">Several contests can run at once. A contest is open while its open switch is on and today is between its start and end dates.</p>
+<?php if (!$rows): ?>
+  <p class="note">No contests yet. Create the first one.</p>
+<?php else: ?>
+<div class="tablewrap">
+<table>
+  <tr><th>Name</th><th>Start date</th><th>Close date</th><th>Status</th><th>Entries</th><th></th></tr>
+  <?php foreach ($rows as $c): ?>
+  <tr>
+    <td><a href="contests.php?id=<?= (int)$c['id'] ?>"><strong><?= h($c['name']) ?></strong></a></td>
+    <td><?= h(date('M j, Y', strtotime($c['start_date']))) ?></td>
+    <td><?= h(date('M j, Y', strtotime($c['end_date']))) ?></td>
+    <td><?= h(status_label($c)) ?></td>
+    <td><?= (int)$c['entry_count'] ?></td>
+    <td><a href="contests.php?id=<?= (int)$c['id'] ?>">Details</a></td>
+  </tr>
+  <?php endforeach; ?>
+</table>
+</div>
+<?php endif; ?>
+<?php endif; ?>
 <?php page_footer();
