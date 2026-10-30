@@ -32,8 +32,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!$errors) {
             try {
-                $pdo->prepare("INSERT INTO users (username, password_hash, first_name, last_name, email, phone, category, role)
-                               VALUES (?,?,?,?,?,'','','judge')")
+                $pdo->prepare("INSERT INTO users (username, password_hash, first_name, last_name, email, phone, role)
+                               VALUES (?,?,?,?,?,'','judge')")
                     ->execute([$v['username'], password_hash($password, PASSWORD_DEFAULT), $v['first_name'], $v['last_name'], $v['email']]);
                 $newId = (int)$pdo->lastInsertId();
                 $cid = (int)($_POST['contest_id'] ?? 0);

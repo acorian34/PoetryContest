@@ -45,9 +45,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $byCat = [];
 $mine = [];
 if ($contest) {
-    $st = $pdo->prepare('SELECT id, code, category, title FROM entries WHERE contest_id = ? ORDER BY category, code');
+    $st = $pdo->prepare('SELECT id, code, category_id, title FROM entries WHERE contest_id = ? ORDER BY code');
     $st->execute([$cid]);
-    foreach ($st->fetchAll() as $r) $byCat[$r['category']][] = $r;
+    foreach ($st->fetchAll() as $r) $byCat[$r['category_id']][] = $r;
     if ($canScore) {
         $st = $pdo->prepare('SELECT s.entry_id, s.score, s.comments FROM scores s JOIN entries e ON e.id = s.entry_id
                              WHERE s.judge_id = ? AND e.contest_id = ?');
@@ -71,8 +71,8 @@ page_header('Judging', '<nav>' . ($me ? h($me['first_name'] . ' ' . $me['last_na
 <?php endif; ?>
 <p class="note">Entries are identified only by code. Score each poem from 1 to <?= SCORE_MAX ?> (<?= SCORE_MAX ?> is best); you can change a score later.
 <?php if ($canScore): ?>You have scored <strong><?= count($mine) ?></strong> of <?= $total ?>.<?php endif; ?></p>
-<?php foreach (CATEGORIES as $key => [$label]): ?>
-  <h2><?= h($label) ?> (<?= count($byCat[$key] ?? []) ?>)</h2>
+<?php foreach (contest_categories($cid) as $cc): $key = $cc['id']; ?>
+  <h2><?= h($cc['name']) ?> (<?= count($byCat[$key] ?? []) ?>)</h2>
   <?php if (empty($byCat[$key])): ?>
     <p class="note">No entries.</p>
   <?php else: ?>

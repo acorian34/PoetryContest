@@ -4,7 +4,7 @@ require __DIR__ . '/lib.php';
 if (current_user()) { header('Location: dashboard.php'); exit; }
 
 $errors = [];
-$v = ['first_name' => '', 'last_name' => '', 'email' => '', 'phone' => '', 'category' => '', 'username' => ''];
+$v = ['first_name' => '', 'last_name' => '', 'email' => '', 'phone' => '', 'username' => ''];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
@@ -17,7 +17,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($v['last_name'] === '' || mb_strlen($v['last_name']) > 80) $errors[] = 'Please enter a last name.';
     if (!filter_var($v['email'], FILTER_VALIDATE_EMAIL) || strlen($v['email']) > 190) $errors[] = 'Please enter a valid email address.';
     if (strlen(preg_replace('/\D/', '', $v['phone'])) < 10 || strlen($v['phone']) > 40) $errors[] = 'Please enter a phone number with at least 10 digits.';
-    if (!isset(CATEGORIES[$v['category']])) $errors[] = 'Please select a category.';
     if (!preg_match('/^[A-Za-z0-9_.-]{3,40}$/', $v['username'])) $errors[] = 'Username must be 3-40 characters: letters, numbers, dot, dash or underscore.';
     if (strlen($password) < 8) $errors[] = 'Password must be at least 8 characters.';
     elseif (strlen($password) > 72) $errors[] = 'Password must be 72 characters or fewer.';
@@ -26,10 +25,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$errors) {
         try {
             $pdo = db();
-            $pdo->prepare('INSERT INTO users (username, password_hash, first_name, last_name, email, phone, category)
-                           VALUES (?,?,?,?,?,?,?)')
+            $pdo->prepare('INSERT INTO users (username, password_hash, first_name, last_name, email, phone)
+                           VALUES (?,?,?,?,?,?)')
                 ->execute([$v['username'], password_hash($password, PASSWORD_DEFAULT), $v['first_name'],
-                           $v['last_name'], $v['email'], $v['phone'], $v['category']]);
+                           $v['last_name'], $v['email'], $v['phone']]);
             session_regenerate_id(true);
             $_SESSION['user_id'] = (int)$pdo->lastInsertId();
             header('Location: dashboard.php');
@@ -66,14 +65,6 @@ page_header('Register');
     <label>Email <input type="email" name="email" required value="<?= h($v['email']) ?>"></label>
     <label>Phone <input type="tel" name="phone" required value="<?= h($v['phone']) ?>"></label>
   </div>
-  <label>Category
-    <select name="category" required>
-      <option value="">Select a category&hellip;</option>
-      <?php foreach (CATEGORIES as $key => [$label]): ?>
-        <option value="<?= h($key) ?>" <?= $v['category'] === $key ? 'selected' : '' ?>><?= h($label) ?></option>
-      <?php endforeach; ?>
-    </select>
-  </label>
   <label>Username <input name="username" required maxlength="40" autocomplete="username" value="<?= h($v['username']) ?>"></label>
   <div class="row">
     <label>Password (8+ characters) <input type="password" name="password" required autocomplete="new-password"></label>

@@ -7,7 +7,8 @@ $errors = [];
 $notice = $_SESSION['flash_contests'] ?? null;
 unset($_SESSION['flash_contests']);
 $today = date('Y-m-d');
-$v = ['start_date' => $today, 'end_date' => date('Y-m-d', strtotime('+3 months')), 'rules' => '', 'name' => '', 'description' => '', 'max_entries' => (string)DEFAULT_MAX_ENTRIES];
+$v = ['categories' => "Poetry
+Prose", 'start_date' => $today, 'end_date' => date('Y-m-d', strtotime('+3 months')), 'rules' => '', 'name' => '', 'description' => '', 'max_entries' => (string)DEFAULT_MAX_ENTRIES];
 
 function flash_redirect(string $msg): never {
     $_SESSION['flash_contests'] = $msg;
@@ -38,6 +39,20 @@ function contest_fields(array $src, array &$errors): array {
     return $f;
 }
 
+/** One category name per line: trimmed, blank lines dropped, duplicates (ignoring case) removed. */
+function parse_categories(string $text, array &$errors): array {
+    $names = [];
+    foreach (preg_split('/\R/', $text) as $line) {
+        $line = trim($line);
+        if ($line === '') continue;
+        if (mb_strlen($line) > 60) { $errors[] = 'Category names must be 60 characters or fewer.'; continue; }
+        $names[mb_strtolower($line)] ??= $line;
+    }
+    if (!$names) $errors[] = 'Please enter at least one category.';
+    if (count($names) > 30) $errors[] = 'A contest can have at most 30 categories.';
+    return array_values($names);
+}
+
 function duplicate_name(PDOException $e): bool { return (int)($e->errorInfo[1] ?? 0) === 1062; }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -49,9 +64,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'create') {
             $f = contest_fields($_POST, $errors);
             $v = [...$v, ...array_map('strval', $f)];
+            $v['categories'] = (string)($_POST['categories'] ?? '');
+            $cats = parse_categories($v['categories'], $errors);
             if (!$errors) {
+                $pdo->beginTransaction();
                 $pdo->prepare('INSERT INTO contests (name, description, rules, start_date, end_date, max_entries, is_open) VALUES (?,?,?,?,?,?,1)')
                     ->execute([$f['name'], $f['description'], $f['rules'], $f['start_date'], $f['end_date'], $f['max_entries']]);
+                $newId = (int)$pdo->lastInsertId();
+                $used = [];
+                $ins = $pdo->prepare('INSERT INTO contest_categories (contest_id, name, code_prefix, sort_order) VALUES (?,?,?,?)');
+                foreach ($cats as $i => $name) {
+                    $used[] = $prefix = category_prefix($name, $used);
+                    $ins->execute([$newId, $name, $prefix, $i + 1]);
+                }
+                $pdo->commit();
                 flash_redirect('Contest created and open for entries: ' . $f['name']);
             }
         } elseif ($action === 'update') {
@@ -60,6 +86,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->prepare('UPDATE contests SET name = ?, description = ?, rules = ?, start_date = ?, end_date = ?, max_entries = ? WHERE id = ?')
                     ->execute([$f['name'], $f['description'], $f['rules'], $f['start_date'], $f['end_date'], $f['max_entries'], $id]);
                 flash_redirect('Contest updated.');
+            }
+        } elseif ($action === 'cat_add' || $action === 'cat_rename' || $action === 'cat_delete') {
+            $name = trim((string)($_POST['name'] ?? ''));
+            if ($action === 'cat_add') {
+                if ($name === '' || mb_strlen($name) > 60) {
+                    $errors[] = 'Please enter a category name (60 characters or fewer).';
+                } else {
+                    $used = $pdo->prepare('SELECT code_prefix FROM contest_categories WHERE contest_id = ?');
+                    $used->execute([$id]);
+                    $prefix = category_prefix($name, $used->fetchAll(PDO::FETCH_COLUMN));
+                    $pdo->prepare('INSERT INTO contest_categories (contest_id, name, code_prefix, sort_order)
+                                   SELECT ?, ?, ?, COALESCE(MAX(sort_order), 0) + 1 FROM contest_categories WHERE contest_id = ?')
+                        ->execute([$id, $name, $prefix, $id]);
+                    flash_redirect('Category added.');
+                }
+            } elseif ($action === 'cat_rename') {
+                if ($name === '' || mb_strlen($name) > 60) {
+                    $errors[] = 'Please enter a category name (60 characters or fewer).';
+                } else {
+                    $pdo->prepare('UPDATE contest_categories SET name = ? WHERE id = ?')->execute([$name, (int)($_POST['cat_id'] ?? 0)]);
+                    flash_redirect('Category renamed.');
+                }
+            } else {
+                $cid = (int)($_POST['cat_id'] ?? 0);
+                $n = $pdo->prepare('SELECT COUNT(*) FROM entries WHERE category_id = ?');
+                $n->execute([$cid]);
+                $left = $pdo->prepare('SELECT COUNT(*) FROM contest_categories WHERE contest_id = ?');
+                $left->execute([$id]);
+                if ((int)$n->fetchColumn() > 0) {
+                    $errors[] = 'A category with entries cannot be deleted.';
+                } elseif ((int)$left->fetchColumn() <= 1) {
+                    $errors[] = 'A contest needs at least one category.';
+                } else {
+                    $pdo->prepare('DELETE FROM contest_categories WHERE id = ? AND contest_id = ?')->execute([$cid, $id]);
+                    flash_redirect('Category deleted.');
+                }
             }
         } elseif ($action === 'open' || $action === 'close') {
             $pdo->prepare('UPDATE contests SET is_open = ? WHERE id = ?')->execute([$action === 'open' ? 1 : 0, $id]);
@@ -75,8 +137,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     } catch (PDOException $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
         if (duplicate_name($e)) {
-            $errors[] = 'A contest with that name already exists.';
+            $errors[] = str_starts_with($action, 'cat_') ? 'That category already exists in this contest.' : 'A contest with that name already exists.';
         } else {
             error_log($e->getMessage());
             $errors[] = 'Something went wrong. Please try again.';
@@ -88,6 +151,10 @@ $rows = $pdo->query('SELECT c.*, ' . CONTEST_ACCEPTING . ' AS accepting,
         (SELECT COUNT(*) FROM entries e WHERE e.contest_id = c.id) AS entry_count,
         (SELECT COUNT(*) FROM judge_assignments a WHERE a.contest_id = c.id) AS judge_count
     FROM contests c ORDER BY c.id DESC')->fetchAll();
+$catsByContest = [];
+foreach ($pdo->query('SELECT cc.*, (SELECT COUNT(*) FROM entries e WHERE e.category_id = cc.id) AS entry_count FROM contest_categories cc ORDER BY cc.sort_order, cc.id') as $cc) {
+    $catsByContest[$cc['contest_id']][] = $cc;
+}
 
 page_header('Contests', admin_nav());
 ?>
@@ -121,6 +188,32 @@ page_header('Contests', admin_nav());
     <button type="submit" name="action" value="delete" class="danger" formnovalidate onclick="return confirm('Delete this contest?');">Delete</button>
   <?php endif; ?>
 </form>
+<h3 style="margin-bottom:6px">Categories for this contest</h3>
+<div class="tablewrap"><table style="max-width:640px">
+  <?php foreach ($catsByContest[$c['id']] ?? [] as $cc): ?>
+  <tr>
+    <td>
+      <form method="post" class="scoreform">
+        <?= csrf_field() ?>
+        <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">
+        <input type="hidden" name="cat_id" value="<?= (int)$cc['id'] ?>">
+        <input name="name" required maxlength="60" value="<?= h($cc['name']) ?>">
+        <button type="submit" name="action" value="cat_rename">Rename</button>
+        <?php if (!(int)$cc['entry_count']): ?><button type="submit" name="action" value="cat_delete" class="danger" formnovalidate onclick="return confirm('Delete this category?');">Delete</button><?php endif; ?>
+      </form>
+    </td>
+    <td><?= (int)$cc['entry_count'] ?> entries</td>
+  </tr>
+  <?php endforeach; ?>
+  <tr><td colspan="2">
+    <form method="post" class="scoreform">
+      <?= csrf_field() ?>
+      <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">
+      <input name="name" required maxlength="60" placeholder="New category">
+      <button type="submit" name="action" value="cat_add">Add category</button>
+    </form>
+  </td></tr>
+</table></div>
 <br>
 <?php endforeach; ?>
 <?php if (!$rows): ?><p class="note">No contests yet. Create the first one below.</p><?php endif; ?>
@@ -137,6 +230,7 @@ page_header('Contests', admin_nav());
   </div>
   <label>Contest rules (entrants must agree to these when submitting) <textarea name="rules" rows="8" maxlength="20000" required style="width:100%"><?= h($v['rules']) ?></textarea></label>
   <label>Max submissions per person <input type="number" name="max_entries" min="1" max="20" required value="<?= h($v['max_entries']) ?>"></label>
+  <label>Categories (one per line; entrants choose one for each entry) <textarea name="categories" rows="5" required style="width:100%"><?= h($v['categories']) ?></textarea></label>
   <button type="submit">Create contest</button>
 </form>
 <?php page_footer();

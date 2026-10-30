@@ -112,9 +112,28 @@ function csrf_check(): void {
     }
 }
 
+/** A contest's categories in display order. */
+function contest_categories(int $contestId): array {
+    $st = db()->prepare('SELECT * FROM contest_categories WHERE contest_id = ? ORDER BY sort_order, id');
+    $st->execute([$contestId]);
+    return $st->fetchAll();
+}
+
+/** Short judging-code prefix for a category name (initials of its words, or its first letters), unique among $used. */
+function category_prefix(string $name, array $used): string {
+    $ascii = strtoupper((string)preg_replace('/[^A-Za-z0-9 ]/', '', iconv('UTF-8', 'ASCII//TRANSLIT', $name) ?: $name));
+    $words = preg_split('/\s+/', trim($ascii), -1, PREG_SPLIT_NO_EMPTY);
+    $base = '';
+    foreach ($words as $w) $base .= $w[0];
+    if (strlen($base) < 2) $base = substr(str_replace(' ', '', $ascii), 0, 3);
+    $base = substr($base !== '' ? $base : 'X', 0, 4);
+    $prefix = $base;
+    for ($i = 2; in_array($prefix, $used, true); $i++) $prefix = $base . $i;
+    return $prefix;
+}
+
 /** Random, unique judging code like HS-482. Numbers are random, so they reveal nothing about entry order. */
-function make_code(PDO $pdo, string $category, int $contestId): string {
-    $prefix = CATEGORIES[$category][1];
+function make_code(PDO $pdo, string $prefix, int $contestId): string {
     $exists = $pdo->prepare('SELECT 1 FROM entries WHERE contest_id = ? AND code = ?');
     for ($digits = 3; $digits <= 6; $digits++) {
         $min = (int)pow(10, $digits - 1);

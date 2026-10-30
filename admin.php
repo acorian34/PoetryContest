@@ -23,13 +23,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
 
 $rows = [];
 if ($contest) {
-    $st = $pdo->prepare('SELECT e.id, e.code, e.title, e.category, e.file_orig, e.created_at,
+    $st = $pdo->prepare('SELECT e.id, e.code, e.title, cc.name AS category_name, cc.id AS category_id, e.file_orig, e.created_at,
                                 p.first_name, p.last_name, p.email, p.phone,
                                 (SELECT AVG(s.score) FROM scores s WHERE s.entry_id = e.id) AS avg_score,
                                 (SELECT COUNT(*) FROM scores s WHERE s.entry_id = e.id) AS score_count
                          FROM entries e JOIN users p ON p.id = e.person_id
+                         JOIN contest_categories cc ON cc.id = e.category_id
                          WHERE e.contest_id = ?
-                         ORDER BY e.category, e.code');
+                         ORDER BY cc.sort_order, cc.id, e.code');
     $st->execute([$cid]);
     $rows = $st->fetchAll();
 
@@ -43,7 +44,7 @@ if ($contest) {
 }
 
 $counts = [];
-foreach ($rows as $r) $counts[$r['category']] = ($counts[$r['category']] ?? 0) + 1;
+foreach ($rows as $r) $counts[$r['category_id']] = ($counts[$r['category_id']] ?? 0) + 1;
 
 page_header('Admin', admin_nav());
 ?>
@@ -56,8 +57,8 @@ page_header('Admin', admin_nav());
 <p class="note">Submissions are <strong><?= $contest['accepting'] ? 'open' : 'closed' ?></strong> (<?= h($contest['start_date']) ?> to <?= h($contest['end_date']) ?>) &middot; <?= (int)$contest['max_entries'] ?> per person &middot; <a href="contests.php">manage contests</a></p>
 <?= contest_picker($contests, $cid) ?>
 <p class="note">
-<?php foreach (CATEGORIES as $key => [$label]): ?>
-  <?= h($label) ?>: <strong><?= $counts[$key] ?? 0 ?></strong> &nbsp;
+<?php foreach (contest_categories($cid) as $cc): ?>
+  <?= h($cc['name']) ?>: <strong><?= $counts[$cc['id']] ?? 0 ?></strong> &nbsp;
 <?php endforeach; ?>
 </p>
 <div class="tablewrap">
@@ -66,7 +67,7 @@ page_header('Admin', admin_nav());
   <?php foreach ($rows as $r): ?>
   <tr>
     <td><strong><?= h($r['code']) ?></strong></td>
-    <td><?= h(CATEGORIES[$r['category']][0]) ?></td>
+    <td><?= h($r['category_name']) ?></td>
     <td><?= h($r['title']) ?></td>
     <td><?= h($r['first_name'] . ' ' . $r['last_name']) ?></td>
     <td><?= h($r['email']) ?></td>

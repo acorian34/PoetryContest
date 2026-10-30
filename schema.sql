@@ -8,7 +8,6 @@ CREATE TABLE users (
   last_name     VARCHAR(80)  NOT NULL,
   email         VARCHAR(190) NOT NULL,
   phone         VARCHAR(40)  NOT NULL,
-  category      VARCHAR(10)  NOT NULL,   -- default category, updated each time they submit (empty for judges)
   role          ENUM('contestant','judge','admin') NOT NULL DEFAULT 'contestant',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uq_users_username (username),
@@ -30,12 +29,24 @@ CREATE TABLE contests (
   UNIQUE KEY uq_contests_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Each contest has its own list of categories (set by the admin). code_prefix starts the judging codes, e.g. HS-482.
+CREATE TABLE contest_categories (
+  id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  contest_id  INT UNSIGNED NOT NULL,
+  name        VARCHAR(60)  NOT NULL,
+  code_prefix VARCHAR(6)   NOT NULL,
+  sort_order  SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_cat_name (contest_id, name),
+  UNIQUE KEY uq_cat_prefix (contest_id, code_prefix),
+  CONSTRAINT fk_cat_contest FOREIGN KEY (contest_id) REFERENCES contests (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE entries (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   person_id    INT UNSIGNED NOT NULL,
   contest_id   INT UNSIGNED NOT NULL,
   title        VARCHAR(150) NOT NULL,
-  category     VARCHAR(10)  NOT NULL,
+  category_id  INT UNSIGNED NOT NULL,
   code         VARCHAR(16)  NOT NULL,
   file_stored  VARCHAR(64)  NOT NULL,
   file_ext     VARCHAR(10)  NOT NULL,
@@ -44,10 +55,13 @@ CREATE TABLE entries (
   created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uq_entries_contest_code (contest_id, code),
   KEY idx_entries_person_contest (person_id, contest_id),
+  KEY idx_entries_category (category_id),
   CONSTRAINT fk_entries_person FOREIGN KEY (person_id)
     REFERENCES users (id) ON DELETE CASCADE,
   CONSTRAINT fk_entries_contest FOREIGN KEY (contest_id)
-    REFERENCES contests (id) ON DELETE RESTRICT
+    REFERENCES contests (id) ON DELETE RESTRICT,
+  CONSTRAINT fk_entries_category FOREIGN KEY (category_id)
+    REFERENCES contest_categories (id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Which judge is assigned to which contest. A judge can be assigned to several contests.

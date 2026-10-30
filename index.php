@@ -8,10 +8,7 @@ page_header('Welcome');
 <img src="images/logo.png" alt="<?= h(CONTEST_NAME) ?> emblem" class="biglogo">
 <h1><?= h(CONTEST_NAME) ?></h1>
 <p class="lead">Register for a free account, then enter one or more of the contests below by submitting your poems as documents.
-Poems are judged anonymously in four categories:</p>
-<ul>
-  <?php foreach (CATEGORIES as [$label]): ?><li><?= h($label) ?></li><?php endforeach; ?>
-</ul>
+Poems are judged anonymously.</p>
 
 <?php $open = all_contests(true); ?>
 <?php if (!$open): ?>
@@ -20,7 +17,7 @@ Poems are judged anonymously in four categories:</p>
   <h2>Open contests</h2>
   <ul>
   <?php foreach ($open as $c): ?>
-    <li><strong><?= h($c['name']) ?></strong> (<?= h(date('M j, Y', strtotime($c['start_date']))) ?> to <?= h(date('M j, Y', strtotime($c['end_date']))) ?>, up to <?= (int)$c['max_entries'] ?> poems per person)<?php if (trim((string)$c['description']) !== ''): ?><br><span class="note"><?= nl2br(h($c['description'])) ?></span><?php endif; ?></li>
+    <li><strong><?= h($c['name']) ?></strong> (<?= h(date('M j, Y', strtotime($c['start_date']))) ?> to <?= h(date('M j, Y', strtotime($c['end_date']))) ?>, up to <?= (int)$c['max_entries'] ?> poems per person)<?php if (trim((string)$c['description']) !== ''): ?><br><span class="note"><?= nl2br(h($c['description'])) ?></span><?php endif; ?><br><span class="note">Categories: <?= h(implode(', ', array_column(contest_categories((int)$c['id']), 'name'))) ?></span></li>
   <?php endforeach; ?>
   </ul>
 <?php endif; ?>

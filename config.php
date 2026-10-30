@@ -14,13 +14,6 @@ const DB_NAME = 'poetry_contest';
 const DB_USER = 'poetry_user';
 const DB_PASS = 'change-me-db';
 
-// Category key => [label, code prefix used in judging numbers]
-const CATEGORIES = [
-    'g56'   => ['5th-6th Grade', 'G56'],
-    'g78'   => ['7th-8th Grade', 'G78'],
-    'hs'    => ['High School',   'HS'],
-    'adult' => ['Adult',         'AD'],
-];
 
 const ALLOWED_EXT = ['pdf', 'doc', 'docx', 'odt'];   // odt = OpenDocument (LibreOffice / OpenOffice)
 

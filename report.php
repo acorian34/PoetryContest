@@ -23,9 +23,10 @@ if ($contest) {
     $st->execute([$cid]);
     foreach ($st->fetchAll() as $j) $judges[(int)$j['id']] = $j;
 
-    $st = $pdo->prepare('SELECT e.id, e.code, e.title, e.category, e.created_at, u.first_name, u.last_name, u.email, u.phone
+    $st = $pdo->prepare('SELECT e.id, e.code, e.title, cc.name AS category_name, cc.id AS category_id, e.created_at, u.first_name, u.last_name, u.email, u.phone
                          FROM entries e JOIN users u ON u.id = e.person_id
-                         WHERE e.contest_id = ? ORDER BY e.category, e.code');
+                         JOIN contest_categories cc ON cc.id = e.category_id
+                         WHERE e.contest_id = ? ORDER BY cc.sort_order, cc.id, e.code');
     $st->execute([$cid]);
     $entries = $st->fetchAll();
 
@@ -47,7 +48,7 @@ if ($contest) {
     }
     unset($e);
     $byCat = [];
-    foreach ($entries as $i => $e) if ($e['avg'] !== null) $byCat[$e['category']][] = $i;
+    foreach ($entries as $i => $e) if ($e['avg'] !== null) $byCat[$e['category_id']][] = $i;
     foreach ($byCat as $idx) {
         usort($idx, fn($a, $b) => $entries[$b]['avg'] <=> $entries[$a]['avg']);
         $rank = 0; $prev = null;
@@ -72,7 +73,7 @@ if ($contest && isset($_GET['csv']) && ($complete || isset($_GET['interim']))) {
     fputcsv($out, array_map($safe, $head), ',', '"', '');
     foreach ($entries as $e) {
         $s = $scores[(int)$e['id']] ?? [];
-        $row = [$safe($contest['name']), $status, $e['code'], CATEGORIES[$e['category']][0], $e['rank'] ?? '', $safe($e['title']),
+        $row = [$safe($contest['name']), $status, $e['code'], $e['category_name'], $e['rank'] ?? '', $safe($e['title']),
                 $safe($e['first_name']), $safe($e['last_name']), $e['email'], $safe($e['phone']), $e['created_at'],
                 $e['avg'] === null ? '' : round($e['avg'], 2), count($s) . ' of ' . count($judges)];
         foreach ($judges as $jid => $_) $row[] = $s[$jid] ?? '';
@@ -118,7 +119,7 @@ page_header('Report', admin_nav());
   <tr>
     <td><?= $e['rank'] ?? '-' ?></td>
     <td><strong><?= h($e['code']) ?></strong></td>
-    <td><?= h(CATEGORIES[$e['category']][0]) ?></td>
+    <td><?= h($e['category_name']) ?></td>
     <td><?= h($e['title']) ?></td>
     <td><?= h($e['first_name'] . ' ' . $e['last_name']) ?></td>
     <td><?= h($e['email']) ?></td>
