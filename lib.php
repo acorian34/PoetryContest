@@ -185,9 +185,10 @@ function page_header(string $title, string $extraNav = ''): void { ?>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= h($title) ?> - <?= h(CONTEST_NAME) ?></title>
+<link rel="icon" type="image/png" href="images/logo.png">
 <link rel="stylesheet" href="style.css">
 </head><body>
-<header><div class="wrap"><a href="index.php" class="brand"><?= h(CONTEST_NAME) ?></a><?= $extraNav ?></div></header>
+<header><div class="wrap"><a href="index.php" class="brand"><img src="images/logo.png" alt="" class="logo"><?= h(CONTEST_NAME) ?></a><?= $extraNav ?></div></header>
 <main class="wrap">
 <?php }
 

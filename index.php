@@ -5,6 +5,7 @@ if (current_user()) { header('Location: dashboard.php'); exit; }
 
 page_header('Welcome');
 ?>
+<img src="images/logo.png" alt="<?= h(CONTEST_NAME) ?> emblem" class="biglogo">
 <h1><?= h(CONTEST_NAME) ?></h1>
 <p class="lead">Register for a free account, then enter one or more of the contests below by submitting your poems as documents.
 Poems are judged anonymously in four categories:</p>
