@@ -110,3 +110,15 @@ ALTER TABLE users DROP COLUMN category;
 ALTER TABLE users ADD COLUMN deleted_at TIMESTAMP NULL AFTER role;
 ALTER TABLE entries DROP FOREIGN KEY fk_entries_person;
 ALTER TABLE entries ADD CONSTRAINT fk_entries_person FOREIGN KEY (person_id) REFERENCES users (id) ON DELETE RESTRICT;
+
+-- 8. Contests have a status instead of an on/off switch, and nothing is ever deleted: contests, entries, categories and judge
+--    assignments are flagged. If you ran an earlier version of this file, run only steps 8 and 9 (after step 7).
+ALTER TABLE contests
+  ADD COLUMN status ENUM('open','closed','cancelled','delayed','postponed') NOT NULL DEFAULT 'open' AFTER max_entries;
+UPDATE contests SET status = IF(is_open = 1, 'open', 'closed');
+ALTER TABLE contests DROP COLUMN is_open;
+
+-- 9. "Removed" flags.
+ALTER TABLE contest_categories ADD COLUMN removed_at TIMESTAMP NULL;
+ALTER TABLE entries ADD COLUMN removed_at TIMESTAMP NULL AFTER rules_agreed_at;
+ALTER TABLE judge_assignments ADD COLUMN removed_at TIMESTAMP NULL AFTER assigned_at;

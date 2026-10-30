@@ -6,22 +6,17 @@ $contests = all_contests();
 $contest = selected_contest($contests);
 $cid = $contest ? (int)$contest['id'] : 0;
 
-// Delete an entry
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
+// Remove or restore an entry. Nothing is deleted: the entry, its file and its scores stay in the database, flagged as removed.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['entry_id'], $_POST['entry_action'])) {
     csrf_check();
-    $st = $pdo->prepare('SELECT file_stored FROM entries WHERE id = ?');
-    $st->execute([(int)$_POST['delete_id']]);
-    if ($row = $st->fetch()) {
-        $pdo->prepare('DELETE FROM entries WHERE id = ?')->execute([(int)$_POST['delete_id']]);
-        $file = DATA_DIR . '/files/' . basename($row['file_stored']);
-        if (is_file($file)) unlink($file);
-        // The entrant's account is kept; only the entry, its file and its scores are removed.
-    }
+    $flag = $_POST['entry_action'] === 'restore' ? 'NULL' : 'NOW()';
+    $pdo->prepare("UPDATE entries SET removed_at = $flag WHERE id = ?")->execute([(int)$_POST['entry_id']]);
     header('Location: admin.php?contest=' . (int)($_POST['contest'] ?? 0));
     exit;
 }
 
 $rows = [];
+$removed = [];
 if ($contest) {
     $st = $pdo->prepare('SELECT e.id, e.code, e.title, cc.name AS category_name, cc.id AS category_id, e.file_orig, e.created_at,
                                 p.first_name, p.last_name, p.email, p.phone, p.deleted_at,
@@ -29,10 +24,16 @@ if ($contest) {
                                 (SELECT COUNT(*) FROM scores s WHERE s.entry_id = e.id) AS score_count
                          FROM entries e JOIN users p ON p.id = e.person_id
                          JOIN contest_categories cc ON cc.id = e.category_id
-                         WHERE e.contest_id = ?
+                         WHERE e.contest_id = ? AND e.removed_at IS NULL
                          ORDER BY cc.sort_order, cc.id, e.code');
     $st->execute([$cid]);
     $rows = $st->fetchAll();
+
+    $st = $pdo->prepare('SELECT e.id, e.code, e.title, cc.name AS category_name, e.removed_at, p.first_name, p.last_name
+                         FROM entries e JOIN users p ON p.id = e.person_id JOIN contest_categories cc ON cc.id = e.category_id
+                         WHERE e.contest_id = ? AND e.removed_at IS NOT NULL ORDER BY e.removed_at DESC');
+    $st->execute([$cid]);
+    $removed = $st->fetchAll();
 
     // Individual judge scores, grouped by entry
     $byEntry = [];
@@ -81,11 +82,12 @@ page_header('Admin', admin_nav());
     </td>
     <td><a href="download.php?id=<?= (int)$r['id'] ?>">Download</a></td>
     <td>
-      <form method="post" onsubmit="return confirm('Delete this entry permanently?');">
+      <form method="post" onsubmit="return confirm('Remove this entry from the contest? It stays on record and can be restored.');">
         <?= csrf_field() ?>
-        <input type="hidden" name="delete_id" value="<?= (int)$r['id'] ?>">
+        <input type="hidden" name="entry_action" value="remove">
+        <input type="hidden" name="entry_id" value="<?= (int)$r['id'] ?>">
         <input type="hidden" name="contest" value="<?= $cid ?>">
-        <button type="submit" class="danger">Delete</button>
+        <button type="submit" class="danger">Remove</button>
       </form>
     </td>
   </tr>
@@ -93,5 +95,33 @@ page_header('Admin', admin_nav());
   <?php if (!$rows): ?><tr><td colspan="11">No entries in this contest.</td></tr><?php endif; ?>
 </table>
 </div>
+<?php if ($removed): ?>
+<h2>Removed entries (<?= count($removed) ?>)</h2>
+<p class="note">These stay on record (and can be checked against new submissions) but are hidden from judges and reports.</p>
+<div class="tablewrap">
+<table>
+  <tr><th>Code</th><th>Category</th><th>Title</th><th>Author</th><th>Removed</th><th>File</th><th></th></tr>
+  <?php foreach ($removed as $r): ?>
+  <tr>
+    <td><strong><?= h($r['code']) ?></strong></td>
+    <td><?= h($r['category_name']) ?></td>
+    <td><?= h($r['title']) ?></td>
+    <td><?= h($r['first_name'] . ' ' . $r['last_name']) ?></td>
+    <td><?= h($r['removed_at']) ?></td>
+    <td><a href="download.php?id=<?= (int)$r['id'] ?>">Download</a></td>
+    <td>
+      <form method="post">
+        <?= csrf_field() ?>
+        <input type="hidden" name="entry_action" value="restore">
+        <input type="hidden" name="entry_id" value="<?= (int)$r['id'] ?>">
+        <input type="hidden" name="contest" value="<?= $cid ?>">
+        <button type="submit">Restore</button>
+      </form>
+    </td>
+  </tr>
+  <?php endforeach; ?>
+</table>
+</div>
+<?php endif; ?>
 <?php endif; ?>
 <?php page_footer();

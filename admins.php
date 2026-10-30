@@ -60,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errors[] = 'That account is already an administrator.';
         } else {
             $pdo->prepare("UPDATE users SET role = 'admin' WHERE id = ?")->execute([$u['id']]);
-            $pdo->prepare('DELETE FROM judge_assignments WHERE person_id = ?')->execute([$u['id']]);
+            $pdo->prepare('UPDATE judge_assignments SET removed_at = NOW() WHERE person_id = ? AND removed_at IS NULL')->execute([$u['id']]);
             flash_redirect($u['first_name'] . ' ' . $u['last_name'] . ' is now an administrator.');
         }
     } elseif ($action === 'demote') {

@@ -25,6 +25,7 @@ function contest_fields(array $src, array &$errors): array {
         'start_date'  => trim((string)($src['start_date'] ?? '')),
         'end_date'    => trim((string)($src['end_date'] ?? '')),
         'max_entries' => (int)($src['max_entries'] ?? 0),
+        'status'      => (string)($src['status'] ?? 'open'),
     ];
     if ($f['name'] === '' || mb_strlen($f['name']) > 150) $errors[] = 'Please enter a contest name (150 characters or fewer).';
     if (mb_strlen($f['description']) > 5000) $errors[] = 'The description is too long.';
@@ -35,6 +36,7 @@ function contest_fields(array $src, array &$errors): array {
     if (!$errors && $f['end_date'] < $f['start_date']) $errors[] = 'The end date cannot be before the start date.';
     if (mb_strlen($f['rules']) > 20000) $errors[] = 'The rules text is too long.';
     if ($f['rules'] === '') $errors[] = 'Please enter the contest rules.';
+    if (!in_array($f['status'], CONTEST_STATUSES, true)) $errors[] = 'Please choose a valid status.';
     if ($f['max_entries'] < 1 || $f['max_entries'] > 20) $errors[] = 'Entries per person must be between 1 and 20.';
     return $f;
 }
@@ -68,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $cats = parse_categories($v['categories'], $errors);
             if (!$errors) {
                 $pdo->beginTransaction();
-                $pdo->prepare('INSERT INTO contests (name, description, rules, start_date, end_date, max_entries, is_open) VALUES (?,?,?,?,?,?,1)')
+                $pdo->prepare('INSERT INTO contests (name, description, rules, start_date, end_date, max_entries, status) VALUES (?,?,?,?,?,?,\'open\')')
                     ->execute([$f['name'], $f['description'], $f['rules'], $f['start_date'], $f['end_date'], $f['max_entries']]);
                 $newId = (int)$pdo->lastInsertId();
                 $used = [];
@@ -83,16 +85,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($action === 'update') {
             $f = contest_fields($_POST, $errors);
             if (!$errors) {
-                $pdo->prepare('UPDATE contests SET name = ?, description = ?, rules = ?, start_date = ?, end_date = ?, max_entries = ? WHERE id = ?')
-                    ->execute([$f['name'], $f['description'], $f['rules'], $f['start_date'], $f['end_date'], $f['max_entries'], $id]);
+                $pdo->prepare('UPDATE contests SET name = ?, description = ?, rules = ?, start_date = ?, end_date = ?, max_entries = ?, status = ? WHERE id = ?')
+                    ->execute([$f['name'], $f['description'], $f['rules'], $f['start_date'], $f['end_date'], $f['max_entries'], $f['status'], $id]);
                 flash_redirect('Contest updated.', $id);
             }
-        } elseif ($action === 'cat_add' || $action === 'cat_rename' || $action === 'cat_delete') {
+        } elseif ($action === 'cat_add' || $action === 'cat_rename' || $action === 'cat_remove') {
             $name = trim((string)($_POST['name'] ?? ''));
             if ($action === 'cat_add') {
                 if ($name === '' || mb_strlen($name) > 60) {
                     $errors[] = 'Please enter a category name (60 characters or fewer).';
                 } else {
+                    $old = $pdo->prepare('SELECT id FROM contest_categories WHERE contest_id = ? AND name = ? AND removed_at IS NOT NULL');
+                    $old->execute([$id, $name]);
+                    if ($oldId = $old->fetchColumn()) {   // same name as a removed category: bring that one back
+                        $pdo->prepare('UPDATE contest_categories SET removed_at = NULL WHERE id = ?')->execute([$oldId]);
+                        flash_redirect('Category restored.', $id);
+                    }
                     $used = $pdo->prepare('SELECT code_prefix FROM contest_categories WHERE contest_id = ?');
                     $used->execute([$id]);
                     $prefix = category_prefix($name, $used->fetchAll(PDO::FETCH_COLUMN));
@@ -112,28 +120,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $cid = (int)($_POST['cat_id'] ?? 0);
                 $n = $pdo->prepare('SELECT COUNT(*) FROM entries WHERE category_id = ?');
                 $n->execute([$cid]);
-                $left = $pdo->prepare('SELECT COUNT(*) FROM contest_categories WHERE contest_id = ?');
+                $left = $pdo->prepare('SELECT COUNT(*) FROM contest_categories WHERE contest_id = ? AND removed_at IS NULL');
                 $left->execute([$id]);
                 if ((int)$n->fetchColumn() > 0) {
-                    $errors[] = 'A category with entries cannot be deleted.';
+                    $errors[] = 'A category that has entries cannot be removed.';
                 } elseif ((int)$left->fetchColumn() <= 1) {
                     $errors[] = 'A contest needs at least one category.';
                 } else {
-                    $pdo->prepare('DELETE FROM contest_categories WHERE id = ? AND contest_id = ?')->execute([$cid, $id]);
-                    flash_redirect('Category deleted.', $id);
+                    $pdo->prepare('UPDATE contest_categories SET removed_at = NOW() WHERE id = ? AND contest_id = ?')->execute([$cid, $id]);
+                    flash_redirect('Category removed.', $id);
                 }
-            }
-        } elseif ($action === 'open' || $action === 'close') {
-            $pdo->prepare('UPDATE contests SET is_open = ? WHERE id = ?')->execute([$action === 'open' ? 1 : 0, $id]);
-            flash_redirect($action === 'open' ? 'Contest is now open for entries.' : 'Contest is now closed to new entries.', $id);
-        } elseif ($action === 'delete') {
-            $n = $pdo->prepare('SELECT COUNT(*) FROM entries WHERE contest_id = ?');
-            $n->execute([$id]);
-            if ((int)$n->fetchColumn() > 0) {
-                $errors[] = 'A contest with entries cannot be deleted. Close it instead.';
-            } else {
-                $pdo->prepare('DELETE FROM contests WHERE id = ?')->execute([$id]);
-                flash_redirect('Contest deleted.');
             }
         }
     } catch (PDOException $e) {
@@ -157,7 +153,7 @@ $detail = null;
 if (!$creating && $viewId) {
     $st = $pdo->prepare('SELECT c.*,' . $status . ',
             (SELECT COUNT(*) FROM entries e WHERE e.contest_id = c.id) AS entry_count,
-            (SELECT COUNT(*) FROM judge_assignments a WHERE a.contest_id = c.id) AS judge_count
+            (SELECT COUNT(*) FROM judge_assignments a WHERE a.contest_id = c.id AND a.removed_at IS NULL) AS judge_count
         FROM contests c WHERE c.id = ?');
     $st->execute([$viewId]);
     $detail = $st->fetch() ?: null;
@@ -206,18 +202,21 @@ page_header('Contests', admin_nav());
   </div>
   <label>Contest rules (entrants must agree to these when submitting) <textarea name="rules" rows="8" maxlength="20000" required style="width:100%"><?= h($c['rules']) ?></textarea></label>
   <label>Max submissions per person <input type="number" name="max_entries" min="1" max="20" required value="<?= (int)$c['max_entries'] ?>"></label>
+  <label>Status
+    <select name="status">
+      <?php foreach (CONTEST_STATUSES as $s): ?>
+        <option value="<?= h($s) ?>"<?= $c['status'] === $s ? ' selected' : '' ?>><?= h(ucfirst($s)) ?></option>
+      <?php endforeach; ?>
+    </select>
+  </label>
+  <p class="note">Only <strong>Open</strong> contests accept entries, and only between the start and end dates. Closed, cancelled, delayed and postponed contests stay on record. Contests are never deleted.</p>
   <button type="submit" name="action" value="update">Save changes</button>
-  <button type="submit" name="action" value="<?= $c['is_open'] ? 'close' : 'open' ?>" formnovalidate<?= $c['is_open'] ? ' class="danger"' : '' ?>>
-    <?= $c['is_open'] ? 'Close to new entries' : 'Open for entries' ?></button>
-  <?php if (!(int)$c['entry_count']): ?>
-    <button type="submit" name="action" value="delete" class="danger" formnovalidate onclick="return confirm('Delete this contest?');">Delete</button>
-  <?php endif; ?>
 </form>
 
 <h2>Categories</h2>
 <?php
 $cats = $pdo->prepare('SELECT cc.*, (SELECT COUNT(*) FROM entries e WHERE e.category_id = cc.id) AS entry_count
-                       FROM contest_categories cc WHERE cc.contest_id = ? ORDER BY cc.sort_order, cc.id');
+                       FROM contest_categories cc WHERE cc.contest_id = ? AND cc.removed_at IS NULL ORDER BY cc.sort_order, cc.id');
 $cats->execute([$c['id']]);
 ?>
 <div class="tablewrap"><table style="max-width:640px">
@@ -230,7 +229,7 @@ $cats->execute([$c['id']]);
         <input type="hidden" name="cat_id" value="<?= (int)$cc['id'] ?>">
         <input name="name" required maxlength="60" value="<?= h($cc['name']) ?>">
         <button type="submit" name="action" value="cat_rename">Rename</button>
-        <?php if (!(int)$cc['entry_count']): ?><button type="submit" name="action" value="cat_delete" class="danger" formnovalidate onclick="return confirm('Delete this category?');">Delete</button><?php endif; ?>
+        <?php if (!(int)$cc['entry_count']): ?><button type="submit" name="action" value="cat_remove" class="danger" formnovalidate onclick="return confirm('Remove this category?');">Remove</button><?php endif; ?>
       </form>
     </td>
     <td><?= (int)$cc['entry_count'] ?> entries</td>

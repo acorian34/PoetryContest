@@ -17,7 +17,7 @@ function db(): PDO {
 }
 
 /** SQL condition for "accepting entries now": the admin open switch is on and today is within the start and end dates (inclusive). */
-const CONTEST_ACCEPTING = '(is_open = 1 AND CURDATE() BETWEEN start_date AND end_date)';
+const CONTEST_ACCEPTING = "(status = 'open' AND CURDATE() BETWEEN start_date AND end_date)";
 
 /** All contests, newest first, or only the ones accepting entries. */
 function all_contests(bool $openOnly = false): array {
@@ -114,7 +114,7 @@ function csrf_check(): void {
 
 /** A contest's categories in display order. */
 function contest_categories(int $contestId): array {
-    $st = db()->prepare('SELECT * FROM contest_categories WHERE contest_id = ? ORDER BY sort_order, id');
+    $st = db()->prepare('SELECT * FROM contest_categories WHERE contest_id = ? AND removed_at IS NULL ORDER BY sort_order, id');
     $st->execute([$contestId]);
     return $st->fetchAll();
 }
@@ -168,7 +168,7 @@ function judge_contests(): ?array {
     if (!$j) return [];
     if ($j['role'] === 'admin') return null;
     $st = db()->prepare('SELECT c.* FROM contests c JOIN judge_assignments a ON a.contest_id = c.id
-                         WHERE a.person_id = ? ORDER BY c.id DESC');
+                         WHERE a.person_id = ? AND a.removed_at IS NULL ORDER BY c.id DESC');
     $st->execute([$j['id']]);
     return $st->fetchAll();
 }
@@ -221,11 +221,11 @@ function admin_nav(): string {
          . '<a href="admins.php">Admins</a> <a href="report.php">Report</a> <a href="login.php?logout=1">Log out</a></nav>';
 }
 
-/** Open / Closed label for a contest row (needs the `accepting` column), with the reason when it is closed. */
+/** Status label for a contest row (needs the `accepting` column): the admin's status flag, plus whether the dates allow entries. */
 function status_label(array $c): string {
     if ($c['accepting']) return 'Open';
-    if (!$c['is_open']) return 'Closed (switched off)';
-    return $c['start_date'] > date('Y-m-d') ? 'Closed (not started)' : 'Closed (ended)';
+    if ($c['status'] !== 'open') return ucfirst($c['status']);   // Closed, Cancelled, Delayed, Postponed
+    return $c['start_date'] > date('Y-m-d') ? 'Open (not started yet)' : 'Closed (ended)';
 }
 
 /** Navigation for logged-in entrants. */
@@ -235,3 +235,6 @@ function user_nav(): string {
 }
 
 function fmt_date(string $d): string { return date('M j, Y', strtotime($d)); }
+
+/** Contest status flags. Only "open" contests accept entries, and only between their start and end dates. */
+const CONTEST_STATUSES = ['open', 'closed', 'cancelled', 'delayed', 'postponed'];

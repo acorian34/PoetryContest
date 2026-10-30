@@ -25,7 +25,7 @@ CREATE TABLE contests (
   start_date   DATE         NOT NULL,              -- entries accepted from this date (inclusive)
   end_date     DATE         NOT NULL,              -- through this date (inclusive)
   max_entries  TINYINT UNSIGNED NOT NULL DEFAULT 2,   -- poems allowed per person in this contest
-  is_open      TINYINT(1)   NOT NULL DEFAULT 1,       -- admin switch: 0 closes the contest regardless of dates
+  status       ENUM('open','closed','cancelled','delayed','postponed') NOT NULL DEFAULT 'open',   -- only "open" contests accept entries, and only between the dates
   created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uq_contests_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -37,6 +37,7 @@ CREATE TABLE contest_categories (
   name        VARCHAR(60)  NOT NULL,
   code_prefix VARCHAR(6)   NOT NULL,
   sort_order  SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  removed_at  TIMESTAMP NULL,   -- flagged instead of deleted
   UNIQUE KEY uq_cat_name (contest_id, name),
   UNIQUE KEY uq_cat_prefix (contest_id, code_prefix),
   CONSTRAINT fk_cat_contest FOREIGN KEY (contest_id) REFERENCES contests (id) ON DELETE CASCADE
@@ -53,6 +54,7 @@ CREATE TABLE entries (
   file_ext     VARCHAR(10)  NOT NULL,
   file_orig    VARCHAR(255) NOT NULL,
   rules_agreed_at TIMESTAMP NULL,                  -- when the entrant ticked the rules checkbox
+  removed_at   TIMESTAMP NULL,                  -- set when an admin removes the entry; the row and file are kept
   created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uq_entries_contest_code (contest_id, code),
   KEY idx_entries_person_contest (person_id, contest_id),
@@ -70,6 +72,7 @@ CREATE TABLE judge_assignments (
   person_id   INT UNSIGNED NOT NULL,
   contest_id  INT UNSIGNED NOT NULL,
   assigned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  removed_at  TIMESTAMP NULL,   -- set when the judge is unassigned; the row is kept
   PRIMARY KEY (person_id, contest_id),
   KEY idx_assign_contest (contest_id),
   CONSTRAINT fk_assign_person  FOREIGN KEY (person_id)  REFERENCES users (id)   ON DELETE CASCADE,

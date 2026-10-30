@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $newId = (int)$pdo->lastInsertId();
                 $cid = (int)($_POST['contest_id'] ?? 0);
                 if ($cid && find_contest($cid)) {
-                    $pdo->prepare('INSERT IGNORE INTO judge_assignments (person_id, contest_id) VALUES (?,?)')->execute([$newId, $cid]);
+                    $pdo->prepare('INSERT INTO judge_assignments (person_id, contest_id) VALUES (?,?) ON DUPLICATE KEY UPDATE removed_at = NULL')->execute([$newId, $cid]);
                 }
                 flash_redirect('Judge account created for ' . $v['first_name'] . ' ' . $v['last_name'] . '.');
             } catch (PDOException $e) {
@@ -67,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($action === 'demote') {
         $pdo->prepare("UPDATE users SET role = 'contestant' WHERE id = ? AND role = 'judge'")->execute([(int)($_POST['id'] ?? 0)]);
-        $pdo->prepare('DELETE FROM judge_assignments WHERE person_id = ?')->execute([(int)($_POST['id'] ?? 0)]);
+        $pdo->prepare('UPDATE judge_assignments SET removed_at = NOW() WHERE person_id = ? AND removed_at IS NULL')->execute([(int)($_POST['id'] ?? 0)]);
         flash_redirect('Judge access removed. The account is now an ordinary entrant account.');
     } elseif ($action === 'assign' || $action === 'unassign') {
         $cid = (int)($_POST['contest_id'] ?? 0);
@@ -80,10 +80,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif (!$isJudge->fetch()) {
             $errors[] = 'Judge not found.';
         } elseif ($action === 'assign') {
-            $pdo->prepare('INSERT IGNORE INTO judge_assignments (person_id, contest_id) VALUES (?,?)')->execute([$id, $cid]);
+            $pdo->prepare('INSERT INTO judge_assignments (person_id, contest_id) VALUES (?,?) ON DUPLICATE KEY UPDATE removed_at = NULL')->execute([$id, $cid]);
             flash_redirect('Judge assigned to ' . $contest['name'] . '.');
         } else {
-            $pdo->prepare('DELETE FROM judge_assignments WHERE person_id = ? AND contest_id = ?')->execute([$id, $cid]);
+            $pdo->prepare('UPDATE judge_assignments SET removed_at = NOW() WHERE person_id = ? AND contest_id = ? AND removed_at IS NULL')->execute([$id, $cid]);
             flash_redirect('Judge removed from ' . $contest['name'] . '.');
         }
     } elseif ($action === 'reset') {
@@ -102,7 +102,7 @@ $judges = $pdo->query("SELECT id, username, first_name, last_name, email, create
                        WHERE role = 'judge' ORDER BY last_name, first_name")->fetchAll();
 $contests = all_contests();
 $assigned = [];  // judge id => [contest id => contest name]
-foreach ($pdo->query('SELECT a.person_id, c.id, c.name FROM judge_assignments a JOIN contests c ON c.id = a.contest_id ORDER BY c.id DESC') as $a) {
+foreach ($pdo->query('SELECT a.person_id, c.id, c.name FROM judge_assignments a JOIN contests c ON c.id = a.contest_id WHERE a.removed_at IS NULL ORDER BY c.id DESC') as $a) {
     $assigned[$a['person_id']][(int)$a['id']] = $a['name'];
 }
 

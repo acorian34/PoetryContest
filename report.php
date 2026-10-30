@@ -19,18 +19,18 @@ $complete = false;
 
 if ($contest) {
     $st = $pdo->prepare("SELECT u.id, u.first_name, u.last_name FROM judge_assignments a JOIN users u ON u.id = a.person_id
-                         WHERE a.contest_id = ? AND u.role = 'judge' ORDER BY u.last_name, u.first_name");
+                         WHERE a.contest_id = ? AND a.removed_at IS NULL AND u.role = 'judge' ORDER BY u.last_name, u.first_name");
     $st->execute([$cid]);
     foreach ($st->fetchAll() as $j) $judges[(int)$j['id']] = $j;
 
     $st = $pdo->prepare('SELECT e.id, e.code, e.title, cc.name AS category_name, cc.id AS category_id, e.created_at, u.first_name, u.last_name, u.email, u.phone, u.deleted_at
                          FROM entries e JOIN users u ON u.id = e.person_id
                          JOIN contest_categories cc ON cc.id = e.category_id
-                         WHERE e.contest_id = ? ORDER BY cc.sort_order, cc.id, e.code');
+                         WHERE e.contest_id = ? AND e.removed_at IS NULL ORDER BY cc.sort_order, cc.id, e.code');
     $st->execute([$cid]);
     $entries = $st->fetchAll();
 
-    $st = $pdo->prepare('SELECT s.entry_id, s.judge_id, s.score FROM scores s JOIN entries e ON e.id = s.entry_id WHERE e.contest_id = ?');
+    $st = $pdo->prepare('SELECT s.entry_id, s.judge_id, s.score FROM scores s JOIN entries e ON e.id = s.entry_id WHERE e.contest_id = ? AND e.removed_at IS NULL');
     $st->execute([$cid]);
     foreach ($st->fetchAll() as $s) {
         if (isset($judges[(int)$s['judge_id']])) $scores[(int)$s['entry_id']][(int)$s['judge_id']] = (int)$s['score'];

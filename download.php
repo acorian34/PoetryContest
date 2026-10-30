@@ -2,9 +2,10 @@
 require __DIR__ . '/lib.php';
 require_role('judge');
 
-$st = db()->prepare('SELECT code, contest_id, file_stored, file_ext FROM entries WHERE id = ?');
+$st = db()->prepare('SELECT code, contest_id, file_stored, file_ext, removed_at FROM entries WHERE id = ?');
 $st->execute([(int)($_GET['id'] ?? 0)]);
 $e = $st->fetch();
+if ($e && $e['removed_at'] && ($_SESSION['role'] ?? '') !== 'admin') $e = false; // removed entries are only available to administrators
 if ($e && !judge_can_access((int)$e['contest_id'])) $e = false; // judge not assigned to this entry's contest
 $path = $e ? DATA_DIR . '/files/' . basename($e['file_stored']) : '';
 if (!$e || !is_file($path)) { http_response_code(404); exit('Not found.'); }

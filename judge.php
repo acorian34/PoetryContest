@@ -20,7 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $score = filter_var($_POST['score'] ?? '', FILTER_VALIDATE_INT);
     $comments = trim((string)($_POST['comments'] ?? ''));
 
-    $st = $pdo->prepare('SELECT contest_id, code FROM entries WHERE id = ?');
+    $st = $pdo->prepare('SELECT contest_id, code FROM entries WHERE id = ? AND removed_at IS NULL');
     $st->execute([$entryId]);
     $entry = $st->fetch();
 
@@ -45,12 +45,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $byCat = [];
 $mine = [];
 if ($contest) {
-    $st = $pdo->prepare('SELECT id, code, category_id, title FROM entries WHERE contest_id = ? ORDER BY code');
+    $st = $pdo->prepare('SELECT id, code, category_id, title FROM entries WHERE contest_id = ? AND removed_at IS NULL ORDER BY code');
     $st->execute([$cid]);
     foreach ($st->fetchAll() as $r) $byCat[$r['category_id']][] = $r;
     if ($canScore) {
         $st = $pdo->prepare('SELECT s.entry_id, s.score, s.comments FROM scores s JOIN entries e ON e.id = s.entry_id
-                             WHERE s.judge_id = ? AND e.contest_id = ?');
+                             WHERE s.judge_id = ? AND e.contest_id = ? AND e.removed_at IS NULL');
         $st->execute([$me['id'], $cid]);
         foreach ($st->fetchAll() as $s) $mine[$s['entry_id']] = $s;
     }

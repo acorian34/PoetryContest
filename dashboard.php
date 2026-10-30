@@ -7,7 +7,7 @@ $flash = $_SESSION['flash_dashboard'] ?? null;
 unset($_SESSION['flash_dashboard']);
 
 // Contests this person has entered that have not ended yet (past contests are on the history page)
-$st = $pdo->prepare('SELECT c.*, ' . CONTEST_ACCEPTING . ' AS accepting, COUNT(e.id) AS used
+$st = $pdo->prepare('SELECT c.*, ' . CONTEST_ACCEPTING . ' AS accepting, SUM(e.removed_at IS NULL) AS used
                      FROM contests c JOIN entries e ON e.contest_id = c.id
                      WHERE e.person_id = ? AND c.end_date >= CURDATE()
                      GROUP BY c.id ORDER BY c.start_date DESC, c.id DESC');
@@ -15,7 +15,7 @@ $st->execute([$user['id']]);
 $entered = $st->fetchAll();
 
 $usedByContest = [];
-$st = $pdo->prepare('SELECT contest_id, COUNT(*) FROM entries WHERE person_id = ? GROUP BY contest_id');
+$st = $pdo->prepare('SELECT contest_id, COUNT(*) FROM entries WHERE person_id = ? AND removed_at IS NULL GROUP BY contest_id');
 $st->execute([$user['id']]);
 foreach ($st->fetchAll(PDO::FETCH_NUM) as [$cid, $n]) $usedByContest[(int)$cid] = (int)$n;
 
