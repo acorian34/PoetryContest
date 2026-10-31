@@ -122,3 +122,10 @@ ALTER TABLE contests DROP COLUMN is_open;
 ALTER TABLE contest_categories ADD COLUMN removed_at TIMESTAMP NULL;
 ALTER TABLE entries ADD COLUMN removed_at TIMESTAMP NULL AFTER rules_agreed_at;
 ALTER TABLE judge_assignments ADD COLUMN removed_at TIMESTAMP NULL AFTER assigned_at;
+
+-- 10. Each contest has an ID code, and entry IDs become that code plus a random 4-digit number (new entries only; existing
+--     entries keep the IDs they already have). Existing contests get a placeholder code C<number>; change it on the contest's
+--     details page (possible until the contest has entries).
+ALTER TABLE contests ADD COLUMN id_code VARCHAR(10) NULL AFTER id;
+UPDATE contests SET id_code = CONCAT('C', id);
+ALTER TABLE contests MODIFY id_code VARCHAR(10) NOT NULL, ADD UNIQUE KEY uq_contests_idcode (id_code);

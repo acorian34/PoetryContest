@@ -8,7 +8,7 @@ $notice = $_SESSION['flash_contests'] ?? null;
 unset($_SESSION['flash_contests']);
 $today = date('Y-m-d');
 $v = ['categories' => "Poetry
-Prose", 'start_date' => $today, 'end_date' => date('Y-m-d', strtotime('+3 months')), 'rules' => '', 'name' => '', 'description' => '', 'max_entries' => (string)DEFAULT_MAX_ENTRIES];
+Prose", 'id_code' => '', 'start_date' => $today, 'end_date' => date('Y-m-d', strtotime('+3 months')), 'rules' => '', 'name' => '', 'description' => '', 'max_entries' => (string)DEFAULT_MAX_ENTRIES];
 
 function flash_redirect(string $msg, ?int $id = null): never {
     $_SESSION['flash_contests'] = $msg;
@@ -20,6 +20,7 @@ function flash_redirect(string $msg, ?int $id = null): never {
 function contest_fields(array $src, array &$errors): array {
     $f = [
         'name'        => trim((string)($src['name'] ?? '')),
+        'id_code'     => strtoupper(trim((string)($src['id_code'] ?? ''))),
         'description' => trim((string)($src['description'] ?? '')),
         'rules'       => trim((string)($src['rules'] ?? '')),
         'start_date'  => trim((string)($src['start_date'] ?? '')),
@@ -27,6 +28,7 @@ function contest_fields(array $src, array &$errors): array {
         'max_entries' => (int)($src['max_entries'] ?? 0),
         'status'      => (string)($src['status'] ?? 'open'),
     ];
+    if (!preg_match('/^[A-Z0-9]{2,10}$/', $f['id_code'])) $errors[] = 'The contest ID code must be 2-10 letters or digits (for example SPR26).';
     if ($f['name'] === '' || mb_strlen($f['name']) > 150) $errors[] = 'Please enter a contest name (150 characters or fewer).';
     if (mb_strlen($f['description']) > 5000) $errors[] = 'The description is too long.';
     foreach (['start_date' => 'start date', 'end_date' => 'end date'] as $k => $label) {
@@ -70,8 +72,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $cats = parse_categories($v['categories'], $errors);
             if (!$errors) {
                 $pdo->beginTransaction();
-                $pdo->prepare('INSERT INTO contests (name, description, rules, start_date, end_date, max_entries, status) VALUES (?,?,?,?,?,?,\'open\')')
-                    ->execute([$f['name'], $f['description'], $f['rules'], $f['start_date'], $f['end_date'], $f['max_entries']]);
+                $pdo->prepare('INSERT INTO contests (id_code, name, description, rules, start_date, end_date, max_entries, status) VALUES (?,?,?,?,?,?,?,\'open\')')
+                    ->execute([$f['id_code'], $f['name'],$f['description'], $f['rules'], $f['start_date'], $f['end_date'], $f['max_entries']]);
                 $newId = (int)$pdo->lastInsertId();
                 $used = [];
                 $ins = $pdo->prepare('INSERT INTO contest_categories (contest_id, name, code_prefix, sort_order) VALUES (?,?,?,?)');
@@ -85,6 +87,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($action === 'update') {
             $f = contest_fields($_POST, $errors);
             if (!$errors) {
+                $n = $pdo->prepare('SELECT COUNT(*) FROM entries WHERE contest_id = ?');
+                $n->execute([$id]);
+                if ((int)$n->fetchColumn() === 0) {   // the ID code is fixed once entries carry it
+                    $pdo->prepare('UPDATE contests SET id_code = ? WHERE id = ?')->execute([$f['id_code'], $id]);
+                }
                 $pdo->prepare('UPDATE contests SET name = ?, description = ?, rules = ?, start_date = ?, end_date = ?, max_entries = ?, status = ? WHERE id = ?')
                     ->execute([$f['name'], $f['description'], $f['rules'], $f['start_date'], $f['end_date'], $f['max_entries'], $f['status'], $id]);
                 flash_redirect('Contest updated.', $id);
@@ -135,7 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (PDOException $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         if (duplicate_name($e)) {
-            $errors[] = str_starts_with($action, 'cat_') ? 'That category already exists in this contest.' : 'A contest with that name already exists.';
+            $errors[] = str_starts_with($action, 'cat_') ? 'That category already exists in this contest.' : 'A contest with that name or ID code already exists.';
         } else {
             error_log($e->getMessage());
             $errors[] = 'Something went wrong. Please try again.';
@@ -172,7 +179,11 @@ page_header('Contests', admin_nav());
 <form method="post" novalidate>
   <?= csrf_field() ?>
   <input type="hidden" name="action" value="create">
-  <label>Name <input name="name" required maxlength="150" value="<?= h($v['name']) ?>"></label>
+  <div class="row">
+    <label>Name <input name="name" required maxlength="150" value="<?= h($v['name']) ?>"></label>
+    <label>Contest ID code (2-10 letters or digits, e.g. SPR26) <input name="id_code" required maxlength="10" pattern="[A-Za-z0-9]{2,10}" style="text-transform:uppercase" value="<?= h($v['id_code']) ?>"></label>
+  </div>
+  <p class="note">Each entry gets an ID made of this code plus a random 4-digit number (for example SPR26-4821). Judges see only that entry ID. The code cannot be changed once the contest has entries.</p>
   <label>Description (shown to entrants) <textarea name="description" rows="2" maxlength="5000" style="width:100%"><?= h($v['description']) ?></textarea></label>
   <div class="row">
     <label>Start date <input type="date" name="start_date" required value="<?= h($v['start_date']) ?>"></label>
@@ -194,7 +205,13 @@ page_header('Contests', admin_nav());
      <?= (int)$c['entry_count'] ?> entries &middot; <?= (int)$c['judge_count'] ?> judges
      &middot; <a href="admin.php?contest=<?= (int)$c['id'] ?>">View entries</a>
      &middot; <a href="report.php?contest=<?= (int)$c['id'] ?>">Report</a></p>
-  <label>Name <input name="name" required maxlength="150" value="<?= h($c['name']) ?>"></label>
+  <div class="row">
+    <label>Name <input name="name" required maxlength="150" value="<?= h($c['name']) ?>"></label>
+    <label>Contest ID code
+      <input name="id_code" required maxlength="10" pattern="[A-Za-z0-9]{2,10}" style="text-transform:uppercase" value="<?= h($c['id_code']) ?>"<?= (int)$c['entry_count'] ? ' readonly' : '' ?>>
+    </label>
+  </div>
+  <p class="note">Entry IDs are this code plus a random 4-digit number (for example <?= h($c['id_code']) ?>-4821). <?= (int)$c['entry_count'] ? 'The code is locked because the contest already has entries.' : 'It can be changed until the contest has entries.' ?></p>
   <label>Description (shown to entrants) <textarea name="description" rows="2" maxlength="5000" style="width:100%"><?= h($c['description']) ?></textarea></label>
   <div class="row">
     <label>Start date <input type="date" name="start_date" required value="<?= h($c['start_date']) ?>"></label>
@@ -261,10 +278,11 @@ $rows = $pdo->query('SELECT c.*,' . $status . ',
 <?php else: ?>
 <div class="tablewrap">
 <table>
-  <tr><th>Name</th><th>Start date</th><th>Close date</th><th>Status</th><th>Entries</th><th></th></tr>
+  <tr><th>Name</th><th>ID code</th><th>Start date</th><th>Close date</th><th>Status</th><th>Entries</th><th></th></tr>
   <?php foreach ($rows as $c): ?>
   <tr>
     <td><a href="contests.php?id=<?= (int)$c['id'] ?>"><strong><?= h($c['name']) ?></strong></a></td>
+    <td><?= h($c['id_code']) ?></td>
     <td><?= h(date('M j, Y', strtotime($c['start_date']))) ?></td>
     <td><?= h(date('M j, Y', strtotime($c['end_date']))) ?></td>
     <td><?= h(status_label($c)) ?></td>

@@ -64,7 +64,7 @@ page_header('Admin', admin_nav());
 </p>
 <div class="tablewrap">
 <table>
-  <tr><th>Code</th><th>Category</th><th>Title</th><th>Author</th><th>Email</th><th>Phone</th><th>Submitted</th><th>Avg score</th><th>Judge scores</th><th>File</th><th></th></tr>
+  <tr><th>Entry ID</th><th>Category</th><th>Title</th><th>Author</th><th>Email</th><th>Phone</th><th>Submitted</th><th>Avg score</th><th>Judge scores</th><th>File</th><th></th></tr>
   <?php foreach ($rows as $r): ?>
   <tr>
     <td><strong><?= h($r['code']) ?></strong></td>
@@ -100,7 +100,7 @@ page_header('Admin', admin_nav());
 <p class="note">These stay on record (and can be checked against new submissions) but are hidden from judges and reports.</p>
 <div class="tablewrap">
 <table>
-  <tr><th>Code</th><th>Category</th><th>Title</th><th>Author</th><th>Removed</th><th>File</th><th></th></tr>
+  <tr><th>Entry ID</th><th>Category</th><th>Title</th><th>Author</th><th>Removed</th><th>File</th><th></th></tr>
   <?php foreach ($removed as $r): ?>
   <tr>
     <td><strong><?= h($r['code']) ?></strong></td>

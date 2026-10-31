@@ -19,6 +19,7 @@ CREATE TABLE users (
 -- Contests are created by the admin (contests.php). Several can be open at the same time.
 CREATE TABLE contests (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id_code      VARCHAR(10)  NOT NULL,                  -- short contest ID, e.g. SPR26; entry IDs are this plus a random 4-digit number
   name         VARCHAR(150) NOT NULL,
   description  TEXT         NULL,
   rules        TEXT         NULL,                  -- contest rules; entrants must agree to them when submitting
@@ -27,6 +28,7 @@ CREATE TABLE contests (
   max_entries  TINYINT UNSIGNED NOT NULL DEFAULT 2,   -- poems allowed per person in this contest
   status       ENUM('open','closed','cancelled','delayed','postponed') NOT NULL DEFAULT 'open',   -- only "open" contests accept entries, and only between the dates
   created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_contests_idcode (id_code),
   UNIQUE KEY uq_contests_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -49,7 +51,7 @@ CREATE TABLE entries (
   contest_id   INT UNSIGNED NOT NULL,
   title        VARCHAR(150) NOT NULL,
   category_id  INT UNSIGNED NOT NULL,
-  code         VARCHAR(16)  NOT NULL,
+  code         VARCHAR(16)  NOT NULL,   -- entry ID shown to judges, e.g. SPR26-4821 (contest ID code + random 4 digits)
   file_stored  VARCHAR(64)  NOT NULL,
   file_ext     VARCHAR(10)  NOT NULL,
   file_orig    VARCHAR(255) NOT NULL,

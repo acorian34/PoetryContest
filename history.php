@@ -12,7 +12,7 @@ $st->execute([$user['id']]);
 $contests = $st->fetchAll();
 
 $byContest = [];
-$st = $pdo->prepare('SELECT e.contest_id, e.title, cc.name AS category_name, e.file_orig, e.created_at, e.removed_at
+$st = $pdo->prepare('SELECT e.contest_id, e.code, e.title, cc.name AS category_name, e.file_orig, e.created_at, e.removed_at
                      FROM entries e JOIN contest_categories cc ON cc.id = e.category_id
                      WHERE e.person_id = ? ORDER BY e.id');
 $st->execute([$user['id']]);
@@ -29,9 +29,9 @@ page_header('My history', user_nav());
   <h2><a href="contest.php?id=<?= (int)$c['id'] ?>"><?= h($c['name']) ?></a></h2>
   <p class="note"><?= h(fmt_date($c['start_date'])) ?> to <?= h(fmt_date($c['end_date'])) ?> &middot; <?= h(status_label($c)) ?></p>
   <div class="tablewrap"><table>
-    <tr><th>Title</th><th>Category</th><th>File</th><th>Submitted</th></tr>
+    <tr><th>Entry ID</th><th>Title</th><th>Category</th><th>File</th><th>Submitted</th></tr>
     <?php foreach ($byContest[$c['id']] ?? [] as $e): ?>
-      <tr><td><?= h($e['title']) ?><?= $e['removed_at'] ? ' <span class="note">(removed by the organisers)</span>' : '' ?></td><td><?= h($e['category_name']) ?></td><td><?= h($e['file_orig']) ?></td><td><?= h($e['created_at']) ?></td></tr>
+      <tr><td><strong><?= h($e['code']) ?></strong></td><td><?= h($e['title']) ?><?= $e['removed_at'] ? ' <span class="note">(removed by the organisers)</span>' : '' ?></td><td><?= h($e['category_name']) ?></td><td><?= h($e['file_orig']) ?></td><td><?= h($e['created_at']) ?></td></tr>
     <?php endforeach; ?>
   </table></div>
 <?php endforeach; ?>

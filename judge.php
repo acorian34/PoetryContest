@@ -78,7 +78,7 @@ page_header('Judging', '<nav>' . ($me ? h($me['first_name'] . ' ' . $me['last_na
   <?php else: ?>
   <div class="tablewrap">
   <table>
-    <tr><th>Code</th><th>Title</th><th>Poem</th><th>Your score</th></tr>
+    <tr><th>Entry ID</th><th>Title</th><th>Poem</th><th>Your score</th></tr>
     <?php foreach ($byCat[$key] as $r): $s = $mine[$r['id']] ?? null; ?>
     <tr id="e<?= (int)$r['id'] ?>">
       <td><strong><?= h($r['code']) ?></strong></td>

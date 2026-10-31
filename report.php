@@ -68,7 +68,7 @@ if ($contest && isset($_GET['csv']) && ($complete || isset($_GET['interim']))) {
     header('Content-Disposition: attachment; filename="poetry-report-contest-' . $cid . '-' . strtolower($status) . '.csv"');
     $out = fopen('php://output', 'w');
     fwrite($out, "\xEF\xBB\xBF"); // UTF-8 BOM so Excel reads accents correctly
-    $head = ['Contest', 'Status', 'Code', 'Category', 'Rank in category', 'Title', 'First name', 'Last name', 'Email', 'Phone', 'Submitted', 'Account closed', 'Average score', 'Judges scored'];
+    $head = ['Contest', 'Status', 'Entry ID', 'Category', 'Rank in category', 'Title', 'First name', 'Last name', 'Email', 'Phone', 'Submitted', 'Account closed', 'Average score', 'Judges scored'];
     foreach ($judges as $j) $head[] = 'Score: ' . $j['first_name'] . ' ' . $j['last_name'];
     fputcsv($out, array_map($safe, $head), ',', '"', '');
     foreach ($entries as $e) {
@@ -112,7 +112,7 @@ page_header('Report', admin_nav());
 </p>
 <div class="tablewrap">
 <table>
-  <tr><th>Rank</th><th>Code</th><th>Category</th><th>Title</th><th>Name</th><th>Email</th><th>Phone</th>
+  <tr><th>Rank</th><th>Entry ID</th><th>Category</th><th>Title</th><th>Name</th><th>Email</th><th>Phone</th>
     <?php foreach ($judges as $j): ?><th><?= h($j['first_name'] . ' ' . $j['last_name']) ?></th><?php endforeach; ?>
     <th>Average</th></tr>
   <?php foreach ($entries as $e): $s = $scores[(int)$e['id']] ?? []; ?>

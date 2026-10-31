@@ -132,19 +132,21 @@ function category_prefix(string $name, array $used): string {
     return $prefix;
 }
 
-/** Random, unique judging code like HS-482. Numbers are random, so they reveal nothing about entry order. */
-function make_code(PDO $pdo, string $prefix, int $contestId): string {
+/** Entry ID: the contest's ID code plus a random 4-digit number, e.g. SPR26-4821, unique within the contest.
+ *  The numbers are random, so they reveal nothing about entry order, and the ID says nothing about who entered. */
+function make_code(PDO $pdo, string $contestIdCode, int $contestId): string {
     $exists = $pdo->prepare('SELECT 1 FROM entries WHERE contest_id = ? AND code = ?');
-    for ($digits = 3; $digits <= 6; $digits++) {
-        $min = (int)pow(10, $digits - 1);
-        $max = (int)pow(10, $digits) - 1;
-        for ($i = 0; $i < 50; $i++) {
-            $code = $prefix . '-' . random_int($min, $max);
-            $exists->execute([$contestId, $code]);
-            if (!$exists->fetch()) return $code;
-        }
+    for ($i = 0; $i < 200; $i++) {
+        $code = $contestIdCode . '-' . str_pad((string)random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+        $exists->execute([$contestId, $code]);
+        if (!$exists->fetch()) return $code;
     }
-    throw new RuntimeException('Could not generate a unique code.');
+    for ($n = 0; $n <= 9999; $n++) {   // nearly full: take any free number
+        $code = $contestIdCode . '-' . str_pad((string)$n, 4, '0', STR_PAD_LEFT);
+        $exists->execute([$contestId, $code]);
+        if (!$exists->fetch()) return $code;
+    }
+    throw new RuntimeException('This contest has used all 10,000 entry numbers.');
 }
 
 /** The logged-in staff member (a row from `users` whose role is judge or admin), or null.
