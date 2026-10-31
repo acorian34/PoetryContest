@@ -76,7 +76,7 @@ if ($contest && $_SERVER['REQUEST_METHOD'] === 'POST') {
 $mine = [];
 $cats = [];
 if ($contest) {
-    $st = $pdo->prepare('SELECT e.code, e.title, cc.name AS category_name, e.file_orig, e.created_at, e.removed_at
+    $st = $pdo->prepare('SELECT e.title, cc.name AS category_name, e.file_orig, e.created_at, e.removed_at
                          FROM entries e JOIN contest_categories cc ON cc.id = e.category_id
                          WHERE e.person_id = ? AND e.contest_id = ? ORDER BY e.id');
     $st->execute([$user['id'], $contestId]);
@@ -112,9 +112,9 @@ page_header($contest ? $contest['name'] : 'Contest', user_nav());
   <p class="note">You have not submitted a poem to this contest yet.</p>
 <?php else: ?>
   <div class="tablewrap"><table>
-    <tr><th>Entry ID</th><th>Title</th><th>Category</th><th>File</th><th>Submitted</th></tr>
+    <tr><th>Title</th><th>Category</th><th>File</th><th>Submitted</th></tr>
     <?php foreach ($mine as $m): ?>
-      <tr><td><strong><?= h($m['code']) ?></strong></td><td><?= h($m['title']) ?><?= $m['removed_at'] ? ' <span class="note">(removed by the organisers)</span>' : '' ?></td><td><?= h($m['category_name']) ?></td><td><?= h($m['file_orig']) ?></td><td><?= h($m['created_at']) ?></td></tr>
+      <tr><td><?= h($m['title']) ?><?= $m['removed_at'] ? ' <span class="note">(removed by the organisers)</span>' : '' ?></td><td><?= h($m['category_name']) ?></td><td><?= h($m['file_orig']) ?></td><td><?= h($m['created_at']) ?></td></tr>
     <?php endforeach; ?>
   </table></div>
 <?php endif; ?>
